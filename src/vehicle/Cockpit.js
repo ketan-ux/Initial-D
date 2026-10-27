@@ -449,15 +449,13 @@ export class Cockpit {
 		if ( ! this.mirrorRT || ! this.group.visible ) return;
 		const rate = this.quality.mirrorRate || 1;
 		if ( ( this._mirrorFrame ++ ) % rate !== 0 ) return;
-		const xr = renderer.xr;
-		const wasXR = xr.enabled;
-		xr.enabled = false; // draw a plain mono view into the target
+		// Binding a non-output render target makes the renderer use the mirror
+		// camera as a plain mono view, also while an XR session is presenting.
 		const prev = renderer.getRenderTarget();
 		this.mirrorCam.updateMatrixWorld();
 		renderer.setRenderTarget( this.mirrorRT );
 		renderer.render( scene, this.mirrorCam );
 		renderer.setRenderTarget( prev );
-		xr.enabled = wasXR;
 
 	}
 

@@ -53,6 +53,17 @@ export class Game {
 	async init() {
 
 		const q = applyPreset( this.params.get( 'preset' ) || settings.preset );
+		// debugging overrides, e.g. ?q.mirrors=0&q.petals=500
+		for ( const [ k, v ] of this.params ) {
+
+			if ( ! k.startsWith( 'q.' ) ) continue;
+			const key = k.slice( 2 );
+			if ( typeof q[ key ] === 'boolean' ) q[ key ] = v === '1' || v === 'true';
+			else if ( typeof q[ key ] === 'number' ) q[ key ] = +v;
+			else q[ key ] = v;
+
+		}
+
 		this.quality = q;
 		const container = this.root.querySelector( '#viewport' );
 		const ui = this.root.querySelector( '#ui' );
@@ -1125,7 +1136,9 @@ export class Game {
 	_listener( cam ) {
 
 		if ( ! audio.ready ) return;
-		const c = this.xrSession.presenting ? this.rs.renderer.xr.getCamera() : cam;
+		// In XR the user camera holds the head pose relative to its parent rig
+		// (the XR camera's own matrixWorld would be rebuilt without the rig).
+		const c = cam;
 		c.getWorldPosition( _v );
 		c.getWorldQuaternion( _q );
 		_f.set( 0, 0, - 1 ).applyQuaternion( _q );

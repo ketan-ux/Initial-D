@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>XR test (IWER Quest 3 emulation)</title>
+<link rel="stylesheet" href="/src/styles.css"></head>
+<body><div id="app"><div id="viewport"></div><div id="ui"></div></div>
+<script type="module">
+// Emulated Meta Quest 3 + Touch Plus controllers (Meta's IWER) so the WebXR
+// code paths can be exercised in headless Chromium.
+import { XRDevice, metaQuest3 } from 'iwer';
+const dev = new XRDevice( metaQuest3 );
+dev.installRuntime( { forceInstall: true, polyfillLayers: new URLSearchParams( location.search ).has( 'layers' ) } );
+dev.position.set( 0, 1.15, 0 ); // seated head height
+window.__xrdev = dev;
+await import( '/src/main.js' );
+</script></body></html>
