@@ -1,0 +1,38 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>car test</title>
+<style>html,body{margin:0;height:100%;background:#000;overflow:hidden}</style></head>
+<body><div id="app" style="width:100%;height:100%"></div>
+<script type="module">
+import * as THREE from 'three/webgpu';
+import { RenderSystem } from '/src/core/renderer.js';
+import { applyPreset } from '/src/core/quality.js';
+import { CarModel } from '/src/vehicle/CarModel.js';
+import { CARS } from '/src/vehicle/carSpecs.js';
+const params = new URLSearchParams(location.search);
+const q = applyPreset(params.get('preset') || 'high'); q.post = false;
+const rs = new RenderSystem(q);
+await rs.init(document.getElementById('app'));
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x3a2a5a);
+const cam = new THREE.PerspectiveCamera(40, innerWidth/innerHeight, 0.1, 200);
+scene.add(new THREE.HemisphereLight(0x9a88e0, 0x3a2a48, 1.25));
+const dl = new THREE.DirectionalLight(0xd2ccff, 1.7); dl.position.set(-3, 6, 4); scene.add(dl);
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(40,40).rotateX(-Math.PI/2), new THREE.MeshToonNodeMaterial({color:0x4a4060}));
+scene.add(ground);
+const ids = (params.get('cars')||'ae86,fd3s').split(',');
+ids.forEach((id, i) => {
+  const car = new CarModel(CARS[id], +(params.get('livery')||0), q);
+  car.root.position.x = (i - (ids.length-1)/2) * 2.6;
+  car.root.rotation.y = +(params.get('yaw')||0.6);
+  if (params.get('lights')==='1') car.setHeadlights(true);
+  for (let k=0;k<60;k++) car.update(1/30, { brake: params.get('brake')==='1' ? 1 : 0, steerAngle: 0.3, wheelSpin: 0, discHeat: +(params.get('heat')||0) });
+  scene.add(car.root);
+});
+const d = +(params.get('dist')||8), el = +(params.get('el')||0.25), az = +(params.get('az')||0);
+cam.position.set(Math.sin(az)*d, 1.0 + d*Math.sin(el), Math.cos(az)*d);
+cam.lookAt(0, 0.6, 0);
+await rs.renderer.compileAsync(scene, cam);
+rs.render(scene, cam);
+console.log('drawcalls', rs.renderer.info.render.drawCalls, 'tris', rs.renderer.info.render.triangles);
+window.__done = true;
+</script></body></html>

@@ -1,0 +1,32 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>world test</title>
+<style>html,body{margin:0;height:100%;background:#000;overflow:hidden}</style></head>
+<body><div id="app" style="width:100%;height:100%"></div>
+<script type="module">
+import * as THREE from 'three/webgpu';
+import { RenderSystem } from '/src/core/renderer.js';
+import { applyPreset } from '/src/core/quality.js';
+import { World } from '/src/world/World.js';
+const params = new URLSearchParams(location.search);
+const q = applyPreset(params.get('preset') || 'high'); if (params.has('post')) q.post = params.get('post') === '1'; if (params.has('shadows')) q.shadows = params.get('shadows'); if (params.has('chroma')) q.chromatic = params.get('chroma')==='1'; if (params.has('bloom')) q.bloom = params.get('bloom')==='1';
+const rs = new RenderSystem(q);
+await rs.init(document.getElementById('app'));
+const scene = new THREE.Scene();
+const cam = new THREE.PerspectiveCamera(65, innerWidth/innerHeight, 0.1, q.drawDistance);
+const world = new World(scene, q);
+const t0 = performance.now();
+await world.build((p, m) => console.log('progress', p.toFixed(2), m));
+console.log('build ms', (performance.now()-t0).toFixed(0));
+rs.setupScene(scene, cam, world.moon);
+const s = +(params.get('s') || 80);
+const p = world.track.pointAt(s, +(params.get('lat')||0));
+const ahead = world.track.pointAt(s + 40);
+cam.position.set(p.x, p.y + +(params.get('h')||2.5), p.z);
+cam.lookAt(ahead.x, ahead.y + 1, ahead.z);
+world.update(0, cam.position, cam.far);
+await rs.renderer.compileAsync(scene, cam);
+rs.render(scene, cam);
+rs.render(scene, cam);
+console.log('drawcalls', rs.renderer.info.render.drawCalls, 'tris', rs.renderer.info.render.triangles, 'backend', rs.backend);
+window.__done = true;
+</script></body></html>

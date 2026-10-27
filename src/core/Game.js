@@ -1,0 +1,1125 @@
+import * as THREE from 'three/webgpu';
+import { RenderSystem } from './renderer.js';
+import { applyPreset, quality, isMobile } from './quality.js';
+import { settings, setSetting, progress } from './settings.js';
+import { bus } from './events.js';
+import { clamp, damp, lerp } from './math.js';
+import { World } from '../world/World.js';
+import { uTime } from '../render/toon.js';
+import { Petals, LAYER_NO_MIRROR } from '../fx/Petals.js';
+import { FX } from '../fx/Particles.js';
+import { Cockpit } from '../vehicle/Cockpit.js';
+import { Race } from '../modes/Race.js';
+import { ReplayPlayer } from '../modes/Replay.js';
+import { Garage } from '../modes/Garage.js';
+import { CARS } from '../vehicle/carSpecs.js';
+import { audio } from '../audio/AudioEngine.js';
+import { CarAudio } from '../audio/CarAudio.js';
+import { Radio } from '../audio/Radio.js';
+import { Ambience } from '../audio/Ambience.js';
+import { Input, TouchControls } from '../input/Input.js';
+import { XRSessionManager } from '../xr/XRSession.js';
+import { XRControls } from '../xr/XRControls.js';
+import { ComfortVignette } from '../xr/Vignette.js';
+import { MiniMap } from '../ui/MiniMap.js';
+import { HUD } from '../ui/HUD.js';
+import { TelemetryPanel, PhoneGPS } from '../ui/TelemetryPanel.js';
+import { Captions } from '../ui/Captions.js';
+import { Menus } from '../ui/Menus.js';
+import { VRMenu } from '../ui/VRMenu.js';
+
+const PHYS_DT = 1 / 120;
+const HUD_MODES = [ 'auto', 'windshield', 'slate', 'off' ];
+const _v = new THREE.Vector3(), _f = new THREE.Vector3(), _u = new THREE.Vector3(), _q = new THREE.Quaternion();
+
+export class Game {
+
+	constructor( root ) {
+
+		this.root = root;
+		this.state = 'loading';
+		this.paused = false;
+		this.params = new URLSearchParams( location.search );
+		this.acc = 0;
+		this.last = 0;
+		this.fps = 60;
+		this.chase = { pos: new THREE.Vector3(), look: new THREE.Vector3(), init: false };
+		this.lookYaw = 0;
+		this.shake = 0;
+		this.stagingHold = 0;
+
+	}
+
+	async init() {
+
+		const q = applyPreset( this.params.get( 'preset' ) || settings.preset );
+		this.quality = q;
+		const container = this.root.querySelector( '#viewport' );
+		const ui = this.root.querySelector( '#ui' );
+		this.menus = new Menus( ui, this._handlers() );
+		this.rs = new RenderSystem( q );
+		this.rs.userScale = settings.resolutionScale;
+		try {
+
+			await this.rs.init( container );
+
+		} catch ( e ) {
+
+			console.error( e );
+			this.menus.loadingError( 'This browser could not start WebGL 2 / WebGPU. Try a recent Chrome, Edge, Firefox, Safari or the Meta Quest Browser.' );
+			return;
+
+		}
+
+		const renderer = this.rs.renderer;
+		this.input = new Input();
+		if ( isMobile() || this.params.has( 'touch' ) ) {
+
+			this.touch = new TouchControls( this.input, ui );
+			this.touch.show( false );
+
+		}
+
+		this.xrSession = new XRSessionManager( renderer, q );
+		this.vrSupported = await this.xrSession.check();
+
+		// --- world ---
+		this.scene = new THREE.Scene();
+		this.world = new World( this.scene, q );
+		await this.world.build( ( p, msg ) => this.menus.setProgress( p * 0.85, msg ) );
+		this.track = this.world.track;
+
+		this.camera = new THREE.PerspectiveCamera( 70, window.innerWidth / window.innerHeight, 0.06, q.drawDistance );
+		this.camera.layers.enable( LAYER_NO_MIRROR );
+		this.rig = new THREE.Group();
+		this.rig.name = 'rig';
+		this.rig.add( this.camera );
+		this.scene.add( this.rig );
+		this.rs.setupScene( this.scene, this.camera, this.world.moon );
+
+		this.petals = new Petals( q.petals );
+		this.scene.add( this.petals.mesh );
+		this.fx = new FX( this.scene, q );
+		this.minimap = new MiniMap( this.track );
+		this.hud = new HUD( ui, this.minimap );
+		this.hud.show( false );
+		this.captions = new Captions( ui );
+		this.telemetry = new TelemetryPanel( this.minimap );
+		this.vignette = new ComfortVignette();
+		this.camera.add( this.vignette.mesh );
+		this.xrControls = new XRControls( renderer, this.input );
+		this.xrControls.attach( this.rig );
+		this.xrControls.onSelect = ( h ) => this.vrMenu.select( h.ray );
+		this.vrMenu = new VRMenu();
+		this.radio = new Radio( audio );
+		this.ambience = new Ambience( audio );
+		this.menus.setProgress( 0.88, 'Opening the garage' );
+		this.garage = new Garage( this.rs, q );
+
+		this._bindInput();
+		this._bindBus();
+
+		// pre-compile shaders so the first frames do not hitch
+		this.menus.setProgress( 0.92, 'Compiling shaders' );
+		try {
+
+			const p = this.track.pointAt( this.track.startS );
+			this.camera.position.set( p.x, p.y + 3, p.z );
+			await renderer.compileAsync( this.scene, this.camera );
+			await renderer.compileAsync( this.garage.scene, this.garage.camera );
+
+		} catch ( e ) {
+
+			console.warn( 'precompile skipped', e );
+
+		}
+
+		this.menus.setProgress( 1, 'Ready' );
+		const dev = `${q.name} preset · ${this.rs.backend} · ${this.vrSupported ? 'VR headset detected' : 'flatscreen'}`;
+		this.menus.loadingDone( this.vrSupported, dev );
+		this.state = 'title';
+		this.garage.enter();
+		renderer.setAnimationLoop( ( t, frame ) => this._loop( t, frame ) );
+		window.__game = this;
+		if ( this.params.has( 'autostart' ) ) {
+
+			this._start();
+			this.startRace();
+			if ( this.params.has( 'autopilot' ) ) {
+
+				this.race.beginCountdown();
+				this.autopilotPlayer = true;
+
+			}
+
+		}
+
+	}
+
+	// --------------------------------------------------------------- handlers
+	_handlers() {
+
+		return {
+			start: () => this._start(),
+			enterVR: () => this._enterVR(),
+			nextCar: ( d ) => {
+
+				this.garage.nextCar( d ); this.menus.refreshGarage(); audio.click(); this._garageVRMenu();
+
+			},
+			setLivery: ( i ) => {
+
+				this.garage.setLivery( i ); audio.click();
+
+			},
+			togglePopups: () => {
+
+				const on = this.garage.toggleHeadlights(); this._popupSound(); return on;
+
+			},
+			inspect: ( on ) => this.garage.setInspect( on ),
+			replaceTires: () => {
+
+				this.garage.replaceTires(); audio.click();
+
+			},
+			drive: () => this.startRace(),
+			ready: () => this.race?.beginCountdown(),
+			resume: () => this.setPaused( false ),
+			restart: () => {
+
+				this.setPaused( false ); this.startRace();
+
+			},
+			camera: () => this.toggleCamera(),
+			recenter: () => this._recenterXR(),
+			quit: () => {
+
+				this.setPaused( false ); this.toGarage();
+
+			},
+			replay: () => this.startReplay(),
+			replayCmd: ( cmd, v ) => this._replayCmd( cmd, v ),
+			settingChanged: ( key ) => this._settingChanged( key )
+		};
+
+	}
+
+	async _start() {
+
+		if ( this.started ) return;
+		this.started = true;
+		try {
+
+			await audio.init( { hrtf: this.vrSupported || this.quality.key === 'high' } );
+
+		} catch ( e ) {
+
+			console.warn( 'audio unavailable', e );
+
+		}
+
+		this.ambience.start();
+		this.ambience.setLevel( 1 );
+		this.radio.preload();
+		this.menus.show( 'loading', false );
+		this.toGarage();
+
+	}
+
+	async _enterVR() {
+
+		if ( ! this.started ) await this._start();
+		try {
+
+			audio.setHRTF( true );
+			await this.xrSession.enter();
+
+		} catch ( e ) {
+
+			console.error( e );
+			this.hud.toast( 'Could not start VR: ' + e.message, 4 );
+
+		}
+
+	}
+
+	_bindInput() {
+
+		const i = this.input;
+		i.on( 'pause', () => {
+
+			if ( this.state === 'race' ) this.setPaused( ! this.paused );
+			else if ( this.state === 'replay' ) this._replayCmd( 'exit' );
+			else if ( this.menus.isOpen( 'settings' ) ) this.menus.show( 'settings', false );
+			else if ( this.menus.isOpen( 'help' ) ) this.menus.show( 'help', false );
+
+		} );
+		i.on( 'camera', () => this.toggleCamera() );
+		i.on( 'headlights', () => this.toggleHeadlights() );
+		i.on( 'shiftUp', () => this._shift( 1 ) );
+		i.on( 'shiftDown', () => this._shift( - 1 ) );
+		i.on( 'reset', () => {
+
+			if ( this.state === 'race' && this.race.phase === 'race' && ! this.paused ) this.race.respawn();
+
+		} );
+		i.on( 'hud', () => {
+
+			const n = HUD_MODES[ ( HUD_MODES.indexOf( settings.hudMode ) + 1 ) % HUD_MODES.length ];
+			setSetting( 'hudMode', n );
+			this.hud.toast( 'HUD: ' + { auto: 'diegetic', windshield: 'windshield', slate: 'floating slate', off: 'off' }[ n ] );
+			this._applyHud();
+
+		} );
+		i.on( 'debug', () => setSetting( 'showDebug', ! settings.showDebug ) );
+		i.on( 'vignette', () => {
+
+			const n = settings.vignette === 'off' ? 'always' : 'off';
+			setSetting( 'vignette', n );
+			this.hud.toast( 'Comfort vignette: ' + n );
+
+		} );
+		i.on( 'confirm', () => {
+
+			if ( this.state === 'title' && ! this.started ) this._start();
+			else if ( this.state === 'garage' && ! this.menus.isOpen( 'settings' ) && ! this.menus.isOpen( 'help' ) && document.activeElement?.tagName !== 'BUTTON' ) this.startRace();
+			else if ( this.state === 'race' && this.race?.phase === 'staging' ) this.race.beginCountdown();
+
+		} );
+		i.on( 'lookBackToggle', () => ( this.input.lookBack = ! this.input.lookBack ) );
+
+	}
+
+	_bindBus() {
+
+		bus.on( 'xr-start', ( info ) => {
+
+			this.xrInfo = info;
+			this.cockpit?.setVR( true );
+			this.captions.setVR( true );
+			this.hud.show( false );
+			this.touch?.show( false );
+			if ( this.state === 'garage' || this.state === 'title' ) {
+
+				if ( this.state === 'title' ) this.toGarage();
+				this.garage.enterVR();
+				this._garageVRMenu();
+
+			} else {
+
+				this._needsRecenter = 0.4;
+
+			}
+
+			this._applyHud();
+
+		} );
+		bus.on( 'xr-end', () => {
+
+			this.cockpit?.setVR( false );
+			this.captions.setVR( false );
+			this.vrMenu.show( false );
+			this.xrControls.setPointerMode( false );
+			if ( this.state === 'garage' ) {
+
+				this.garage.exitVR();
+				this.garage.enter();
+
+			}
+
+			this._resetRig();
+			this._applyHud();
+			this._applyCamera();
+
+		} );
+		bus.on( 'xr-recenter', () => this._recenterXR() );
+		bus.on( 'countdown', ( n ) => {
+
+			if ( n > 0 ) audio.beep( 880, 0.14, 0.3 );
+			else audio.beep( 1760, 0.5, 0.35 );
+			this.countdownText = n > 0 ? String( n ) : 'GO!';
+			this.countdownTimer = n > 0 ? 1 : 1.2;
+			if ( this._showDomCountdown() ) this.hud.countdown( this.countdownText, n > 0 ? '' : 'go' );
+			if ( n === 3 ) this.menus.show( 'staging', false );
+			if ( this.xrSession.presenting ) this.vrMenu.show( false ), this.xrControls.setPointerMode( false );
+
+		} );
+		bus.on( 'race-phase', ( p ) => {
+
+			if ( p === 'race' ) this.ambience.setLevel( 0.25 );
+			if ( p === 'finish' ) {
+
+				this.hud.toast( this.race.rival ? ( this.race.won ? 'WIN' : 'LOSE' ) : 'FINISH', 2.5 );
+				this.slowmoFinish = 1.2;
+
+			}
+
+			if ( p === 'cooldown' ) {
+
+				this.ambience.setLevel( 1 );
+				setTimeout( () => {
+
+					if ( this.state !== 'race' || this.race?.phase !== 'cooldown' ) return;
+					this.menus.showResults( this.race.results() );
+					this._resultsVRMenu();
+
+				}, 2500 );
+
+			}
+
+		} );
+		bus.on( 'cockpit-button', ( name ) => {
+
+			if ( name === 'headlights' ) this.toggleHeadlights( true );
+			else if ( name === 'hazard' && this.cockpit ) {
+
+				this.cockpit.hazard = ! this.cockpit.hazard;
+				if ( ! this.cockpit.hazard ) this.race.player.model.uniforms.marker.value = 1;
+
+			} else if ( name === 'hud' ) this.input.emit( 'hud' );
+			audio.click();
+
+		} );
+		bus.on( 'phone-tap', () => {
+
+			this.phone?.cycle(); audio.beep( 1320, 0.05, 0.12 );
+
+		} );
+		bus.on( 'settings', ( { key } ) => {
+
+			if ( key.endsWith( 'Volume' ) || key === '*' ) audio.applyVolumes();
+
+		} );
+		bus.on( 'car-contact', ( v ) => {
+
+			audio.thud( clamp( v / 6, 0.2, 0.7 ), 90 );
+			this.shake = Math.max( this.shake, clamp( v / 6, 0, 1 ) );
+			this.xrControls.pulseAll( clamp( v / 8, 0.4, 1 ), 120 );
+
+		} );
+
+	}
+
+	// --------------------------------------------------------------- states
+	toGarage() {
+
+		this._endRace();
+		this.state = 'garage';
+		this.menus.hideAll();
+		this.menus.refreshGarage( this.vrSupported );
+		this.menus.show( 'garage' );
+		this.hud.show( false );
+		this.touch?.show( false );
+		this.garage.setCar( settings.car, settings.livery[ settings.car ] ?? 0 );
+		this.garage.enter();
+		this.ambience.setLevel( 1 );
+		if ( this.xrSession.presenting ) {
+
+			this.garage.enterVR();
+			this._garageVRMenu();
+
+		}
+
+	}
+
+	startRace() {
+
+		this._endRace();
+		const carId = settings.car;
+		this.state = 'race';
+		this.paused = false;
+		this.menus.hideAll();
+		this.garage.leave();
+		this.race = new Race( this.world, this.scene, this.quality, {
+			mode: settings.mode, carId, livery: settings.livery[ carId ] ?? 0, radio: this.radio
+		} );
+		this.cockpit = new Cockpit( this.race.player.model, this.quality );
+		this.cockpit.setVR( this.xrSession.presenting );
+		this.phone = new PhoneGPS( this.cockpit, this.minimap );
+		this.telemetry.mount( this.cockpit );
+		this.captions.mount( this.cockpit );
+		this.captions.setVR( this.xrSession.presenting );
+		this.xrControls.setCockpit( this.cockpit, this.race.player.physics );
+		this.hud.setSpec( this.race.player.spec );
+		this.carAudio = this.race.cars.map( ( c ) => new CarAudio( audio, c, { isPlayer: c === this.race.player } ) );
+		this.fx.clear();
+		this.chase.init = false;
+		this.cameraMode = settings.camera;
+		this._applyCamera();
+		this._applyHud();
+		this.rs.setCamera( this.camera );
+		this.touch?.show( true );
+		this.ambience.setLevel( 0.7 );
+		if ( this.xrSession.presenting ) {
+
+			this._needsRecenter = 0.2;
+			this._stagingVRMenu();
+
+		} else this.menus.show( 'staging' );
+
+		this.hud.countdown( '' );
+
+	}
+
+	_endRace() {
+
+		this.radio.clear();
+		this.carAudio?.forEach( ( a ) => a.stop() );
+		this.carAudio = null;
+		this.replay = null;
+		if ( this.race ) {
+
+			this.telemetry.windshield.removeFromParent();
+			this.telemetry.slate.removeFromParent();
+			this.captions.mesh.removeFromParent();
+			this.race.dispose();
+			this.race = null;
+			this.cockpit = null;
+			this.phone = null;
+
+		}
+
+		this._resetRig();
+		this.vrMenu.show( false );
+		this.xrControls.setPointerMode( false );
+
+	}
+
+	startReplay() {
+
+		if ( ! this.race || this.race.recorder.frames < 10 ) return;
+		this.state = 'replay';
+		this.menus.hideAll();
+		this.replay = new ReplayPlayer( this.race.recorder, this.race.cars, this.track );
+		this.radio.clear();
+		this.hud.show( false );
+		this.touch?.show( false );
+		this.cockpit.group.visible = false;
+		this.race.player.model.setInterior( false );
+		this.fx.clear();
+		this._resetRig();
+		this.scene.add( this.rig );
+		this.camera.fov = 55;
+		this.camera.updateProjectionMatrix();
+		if ( this.xrSession.presenting ) {
+
+			this._replayVRMenu();
+
+		} else this.menus.show( 'replay' );
+
+	}
+
+	_replayCmd( cmd, v ) {
+
+		const r = this.replay;
+		if ( ! r ) return;
+		if ( cmd === 'toggle' ) r.playing = ! r.playing;
+		else if ( cmd === 'seek' ) {
+
+			r.seek( v * r.duration ); this.fx.clear();
+
+		} else if ( cmd === 'speed' ) r.speed = v;
+		else if ( cmd === 'cam' ) r.camMode = v;
+		else if ( cmd === 'focus' ) {
+
+			r.focus = ( r.focus + 1 ) % this.race.cars.length; return r.focus;
+
+		} else if ( cmd === 'exit' ) {
+
+			this.state = 'race';
+			this.replay = null;
+			this.menus.show( 'replay', false );
+			this.fx.clear();
+			// park the cars back at the end state
+			for ( const c of this.race.cars ) c.sync( 0 );
+			this._applyCamera();
+			this.menus.showResults( this.race.results() );
+			this._resultsVRMenu();
+
+		}
+
+	}
+
+	setPaused( p ) {
+
+		if ( this.state !== 'race' ) return;
+		this.paused = p;
+		this.menus.show( 'pause', p );
+		if ( p ) audio.suspend(); else audio.resume();
+		if ( this.xrSession.presenting ) {
+
+			if ( p ) this._pauseVRMenu(); else {
+
+				this.vrMenu.show( false ); this.xrControls.setPointerMode( false );
+
+			}
+
+		}
+
+	}
+
+	// --------------------------------------------------------------- VR menus
+	_placeVRMenu( parent, pos, rotY = 0 ) {
+
+		parent.add( this.vrMenu.mesh );
+		this.vrMenu.mesh.position.copy( pos );
+		this.vrMenu.mesh.rotation.set( 0, rotY, 0 );
+		this.vrMenu.show( true );
+		this.xrControls.setPointerMode( true );
+
+	}
+
+	_garageVRMenu() {
+
+		if ( ! this.xrSession.presenting || this.state !== 'garage' ) return;
+		const id = settings.car, c = CARS[ id ];
+		this.vrMenu.set( `${c.code} · ${c.name}`, [
+			{ label: '▸ Drive to the summit', detail: settings.mode === 'battle' ? 'Battle vs rival' : 'Time attack', action: () => this.startRace() },
+			{ label: 'Next car', detail: c.code, action: () => this._handlers().nextCar( 1 ) },
+			{ label: 'Livery', detail: c.liveries[ settings.livery[ id ] ?? 0 ].name, action: () => {
+
+				const n = ( ( settings.livery[ id ] ?? 0 ) + 1 ) % c.liveries.length; this.garage.setLivery( n ); this._garageVRMenu();
+
+			} },
+			{ label: 'Pop-up headlights', detail: this.garage.headlights ? 'UP' : 'DOWN', action: () => {
+
+				this._handlers().togglePopups(); this._garageVRMenu();
+
+			} },
+			{ label: 'Mode', detail: settings.mode === 'battle' ? 'Battle' : 'Time attack', action: () => {
+
+				setSetting( 'mode', settings.mode === 'battle' ? 'timeattack' : 'battle' ); this._garageVRMenu();
+
+			} },
+			{ label: 'Exit VR', action: () => this.xrSession.exit() }
+		], 'Walk around the car — it is life-size. Point and pull the trigger.' );
+		this._placeVRMenu( this.garage.scene, new THREE.Vector3( 2.2, 1.25, 2.2 ), 0.75 );
+
+	}
+
+	_stagingVRMenu() {
+
+		this.vrMenu.set( 'Summit staging', [
+			{ label: '▸ Ready — start countdown', action: () => {
+
+				this.race?.beginCountdown(); this.vrMenu.show( false ); this.xrControls.setPointerMode( false );
+
+			} },
+			{ label: 'Recenter seat', action: () => this._recenterXR() },
+			{ label: 'Back to garage', action: () => this.toGarage() }
+		], 'Grab the wheel with your grips. Triggers: right = gas, left = brake.' );
+		const e = this.cockpit.eyePos;
+		this._placeVRMenu( this.cockpit.group, new THREE.Vector3( e.x, e.y - 0.05, e.z + 1.2 ), Math.PI );
+
+	}
+
+	_pauseVRMenu() {
+
+		this.vrMenu.set( 'Paused', [
+			{ label: 'Resume', action: () => this.setPaused( false ) },
+			{ label: 'Restart run', action: () => this._handlers().restart() },
+			{ label: 'Recenter seat', action: () => this._recenterXR() },
+			{ label: 'Quit to garage', action: () => this._handlers().quit() }
+		] );
+		const e = this.cockpit.eyePos;
+		this._placeVRMenu( this.cockpit.group, new THREE.Vector3( e.x, e.y - 0.05, e.z + 1.1 ), Math.PI );
+
+	}
+
+	_resultsVRMenu() {
+
+		if ( ! this.xrSession.presenting || ! this.race ) return;
+		const r = this.race.results();
+		const fmt = ( t ) => ( t ? `${Math.floor( t / 60 )}:${( t % 60 ).toFixed( 2 ).padStart( 5, '0' )}` : '--' );
+		this.vrMenu.set( r.mode === 'battle' ? ( r.won ? '勝利 — You won!' : '敗北 — So close' ) : 'Time attack', [
+			{ label: 'Watch replay', detail: 'drone · roadside · slow-mo', action: () => this.startReplay() },
+			{ label: 'Race again', action: () => this._handlers().restart() },
+			{ label: 'Garage', action: () => this.toGarage() }
+		], `Your time ${fmt( r.time )}${r.rivalTime ? ' · rival ' + fmt( r.rivalTime ) : ''}` );
+		const e = this.cockpit.eyePos;
+		this._placeVRMenu( this.cockpit.group, new THREE.Vector3( e.x, e.y, e.z + 1.2 ), Math.PI );
+
+	}
+
+	_replayVRMenu() {
+
+		const r = this.replay;
+		this.vrMenu.set( 'Touge Attack replay', [
+			{ label: 'Play / pause', action: () => this._replayCmd( 'toggle' ) },
+			{ label: 'Camera', detail: r.camMode, action: () => {
+
+				const modes = [ 'spotter', 'director', 'chase', 'drone', 'onboard' ];
+				r.camMode = modes[ ( modes.indexOf( r.camMode ) + 1 ) % modes.length ]; this._replayVRMenu();
+
+			} },
+			{ label: 'Speed', detail: r.speed + '×', action: () => {
+
+				r.speed = r.speed >= 1 ? 0.25 : r.speed * 2; this._replayVRMenu();
+
+			} },
+			{ label: 'Exit replay', action: () => this._replayCmd( 'exit' ) }
+		], 'Spectating from roadside spotter positions' );
+		r.camMode = r.camMode === 'director' ? 'spotter' : r.camMode;
+		this.rig.add( this.vrMenu.mesh );
+		this.vrMenu.mesh.position.set( 0.6, 1.1, - 1.0 );
+		this.vrMenu.mesh.rotation.set( 0, - 0.5, 0 );
+		this.vrMenu.show( true );
+		this.xrControls.setPointerMode( true );
+
+	}
+
+	// --------------------------------------------------------------- camera
+	toggleCamera() {
+
+		if ( this.state !== 'race' || this.xrSession.presenting ) return;
+		this.cameraMode = this.cameraMode === 'cockpit' ? 'chase' : 'cockpit';
+		this.chase.init = false;
+		this._applyCamera();
+		this._applyHud();
+
+	}
+
+	_applyCamera() {
+
+		if ( ! this.race ) return;
+		const fpp = this.cameraMode === 'cockpit' || this.xrSession.presenting;
+		this.cockpit.group.visible = fpp;
+		this.race.player.model.setInterior( fpp );
+		this._resetRig();
+		if ( fpp ) {
+
+			this.cockpit.eye.add( this.rig );
+			this.rig.position.set( 0, 0, 0 );
+			this.rig.rotation.set( 0, Math.PI * 0, 0 );
+			this.camera.fov = 72;
+
+		} else {
+
+			this.scene.add( this.rig );
+			this.camera.fov = 62;
+
+		}
+
+		this.camera.position.set( 0, 0, 0 );
+		this.camera.rotation.set( 0, 0, 0 );
+		this.camera.updateProjectionMatrix();
+
+	}
+
+	_resetRig() {
+
+		this.scene.add( this.rig );
+		this.rig.position.set( 0, 0, 0 );
+		this.rig.rotation.set( 0, 0, 0 );
+		this.rig.scale.set( 1, 1, 1 );
+
+	}
+
+	// Place the XR rig so the user's head sits at the driver's eye point,
+	// facing down the road (seated, local-floor reference space).
+	_recenterXR() {
+
+		if ( ! this.xrSession.presenting || ! this.cockpit || this.state === 'replay' ) return;
+		const cam = this.camera; // local transform = head pose relative to the rig
+		const e = new THREE.Euler().setFromQuaternion( cam.quaternion, 'YXZ' );
+		const yaw = e.y;
+		this.cockpit.eye.add( this.rig );
+		// cockpit "eye" faces +z; XR forward is -z, so rotate PI plus the head yaw
+		this.rig.rotation.set( 0, Math.PI - yaw, 0 );
+		const headLocal = cam.position.clone().applyAxisAngle( new THREE.Vector3( 0, 1, 0 ), Math.PI - yaw );
+		this.rig.position.copy( headLocal.negate() );
+		this.hud.toast( 'View recentered' );
+
+	}
+
+	_updateCamera( dt ) {
+
+		const race = this.race, car = race.player, p = car.physics;
+		if ( this.xrSession.presenting ) return;
+		if ( this.cameraMode === 'cockpit' ) {
+
+			// look into corners with yaw rate / steering, and glance back on demand
+			const want = clamp( p.yawRate * 0.22 + p.steerAngle * 0.25, - 0.35, 0.35 ) + ( this.input.lookBack ? Math.PI : 0 );
+			this.lookYaw = damp( this.lookYaw, want, 6, dt );
+			this.rig.rotation.set( 0, Math.PI + this.lookYaw, 0 );
+			const sh = this._shakeAmount( dt );
+			this.camera.position.set( ( Math.random() - 0.5 ) * sh * 0.01, ( Math.random() - 0.5 ) * sh * 0.012, 0 );
+			const fov = 72 + clamp( p.speed / 50, 0, 1 ) * 6;
+			if ( Math.abs( this.camera.fov - fov ) > 0.05 ) {
+
+				this.camera.fov = damp( this.camera.fov, fov, 3, dt ); this.camera.updateProjectionMatrix();
+
+			}
+
+		} else {
+
+			const heading = Math.atan2( p.vx, p.vz );
+			const speed = p.speed;
+			const camHeading = speed > 3 ? lerp( p.heading, heading, 0.45 ) : p.heading;
+			_f.set( Math.sin( camHeading ), 0, Math.cos( camHeading ) );
+			if ( this.input.lookBack ) _f.negate();
+			const dist = 6.2 + clamp( speed / 40, 0, 1 ) * 1.6;
+			_v.copy( car.root.position ).addScaledVector( _f, - dist );
+			_v.y += 2.1 + clamp( speed / 40, 0, 1 ) * 0.3;
+			// keep the chase camera above the road surface
+			const pr = this.track.project( _v.x, _v.z, p.trackHint );
+			_v.y = Math.max( _v.y, pr.y + 1.1 );
+			if ( ! this.chase.init ) {
+
+				this.chase.pos.copy( _v ); this.chase.look.copy( car.root.position ); this.chase.init = true;
+
+			}
+
+			this.chase.pos.lerp( _v, 1 - Math.exp( - dt * 7 ) );
+			_u.copy( car.root.position ).addScaledVector( _f, 3.5 );
+			_u.y += 0.8;
+			this.chase.look.lerp( _u, 1 - Math.exp( - dt * 12 ) );
+			const sh = this._shakeAmount( dt );
+			this.rig.position.copy( this.chase.pos ).add( new THREE.Vector3( ( Math.random() - 0.5 ) * sh * 0.06, ( Math.random() - 0.5 ) * sh * 0.06, 0 ) );
+			this.rig.lookAt( this.chase.look );
+			this.rig.rotateY( Math.PI ); // Object3D.lookAt points +z; cameras look down -z
+			const fov = 62 + clamp( speed / 45, 0, 1 ) * 10;
+			if ( Math.abs( this.camera.fov - fov ) > 0.05 ) {
+
+				this.camera.fov = damp( this.camera.fov, fov, 3, dt ); this.camera.updateProjectionMatrix();
+
+			}
+
+		}
+
+	}
+
+	_shakeAmount( dt ) {
+
+		if ( ! settings.cameraShake || ! this.race ) return 0;
+		const p = this.race.player.physics;
+		const gutter = p.inGutter.some( ( g ) => g ) ? 0.6 : 0;
+		const target = Math.max( p.scrape, gutter * clamp( p.speed / 25, 0, 1 ), clamp( p.speed / 70, 0, 0.25 ) );
+		this.shake = damp( this.shake, target, 5, dt );
+		return this.shake;
+
+	}
+
+	// --------------------------------------------------------------- HUD
+	_showDomCountdown() {
+
+		return ! this.xrSession.presenting && ( this.cameraMode === 'chase' || settings.hudMode === 'slate' );
+
+	}
+
+	_applyHud() {
+
+		const vr = this.xrSession.presenting;
+		const mode = settings.hudMode;
+		const fpp = this.cameraMode === 'cockpit' || vr;
+		const inRace = this.state === 'race';
+		let dom = false;
+		if ( inRace && ! vr ) {
+
+			if ( ! fpp ) dom = mode !== 'off';
+			else dom = mode === 'slate';
+
+		}
+
+		this.hud.show( dom );
+		let panel = 'none';
+		if ( inRace && fpp ) {
+
+			if ( mode === 'windshield' ) panel = 'windshield';
+			else if ( mode === 'slate' && vr ) panel = 'slate';
+
+		}
+
+		this.telemetry.setMode( panel );
+
+	}
+
+	_settingChanged( key ) {
+
+		if ( key === 'hudMode' || key === '*' ) this._applyHud();
+		if ( key === 'camera' && this.state === 'race' ) {
+
+			this.cameraMode = settings.camera; this._applyCamera(); this._applyHud();
+
+		}
+
+		if ( key === 'resolutionScale' ) {
+
+			this.rs.userScale = settings.resolutionScale; this.rs.applyPixelRatio(); this.rs.resize();
+
+		}
+
+		if ( key === 'transmission' && this.race ) this.race.player.physics.autoShift = settings.transmission === 'auto';
+		if ( key === 'preset' ) {
+
+			this.menus.confirm( 'Reload now to apply the new quality preset?', () => location.reload() );
+
+		}
+
+	}
+
+	// --------------------------------------------------------------- actions
+	_shift( dir ) {
+
+		if ( ! this.race || this.race.phase !== 'race' ) return;
+		const p = this.race.player.physics;
+		if ( p.autoShift ) {
+
+			// tapping a shift control switches to manual on the fly
+			p.autoShift = false;
+			setSetting( 'transmission', 'manual' );
+			this.hud.toast( 'Manual transmission' );
+
+		}
+
+		if ( dir > 0 ) p.shiftUp(); else p.shiftDown();
+
+	}
+
+	toggleHeadlights( fromCockpit = false ) {
+
+		const car = this.race?.player;
+		if ( ! car ) return;
+		car.setHeadlights( ! car.headlightsOn );
+		if ( ! fromCockpit ) this.cockpit?.pressButton( 'headlights' );
+		this._popupSound();
+		this.hud.toast( car.headlightsOn ? 'Pop-ups up' : 'Lights off — risky!' );
+
+	}
+
+	_popupSound() {
+
+		if ( ! audio.ready ) return;
+		audio.noiseBurst( { dur: 0.35, freq: 420, q: 4, gain: 0.18 } );
+		audio.beep( 140, 0.3, 0.08, 'sfx', 'sawtooth' );
+
+	}
+
+	// --------------------------------------------------------------- loop
+	_loop( time ) {
+
+		const now = time / 1000;
+		let dt = this.last ? now - this.last : 1 / 60;
+		this.last = now;
+		dt = clamp( dt, 0, 0.1 );
+		this.fps = lerp( this.fps, 1 / Math.max( dt, 1e-3 ), 0.05 );
+		this.input.update( dt );
+		this.xrControls.update( dt );
+		if ( this.vrMenu.mesh.visible ) this.vrMenu.updateHover( this.xrControls.hands.map( ( h ) => h.ray ) );
+
+		if ( this.state === 'garage' || this.state === 'title' ) {
+
+			uTime.value += dt;
+			this.garage.update( dt );
+			this._listener( this.garage.camera );
+			this.ambience.update( dt );
+			this.rs.render( this.garage.scene, this.garage.camera );
+
+		} else if ( this.state === 'race' ) {
+
+			this._raceFrame( dt );
+
+		} else if ( this.state === 'replay' ) {
+
+			this._replayFrame( dt );
+
+		}
+
+		this.captions.update( this.paused ? 0 : dt );
+		this.radio.update();
+		this.rs.adapt( dt, settings.adaptiveResolution );
+		if ( settings.showDebug ) {
+
+			const info = this.rs.renderer.info.render;
+			this.hud.el.classList.remove( 'hidden' );
+			this.hud.debug( `${Math.round( this.fps )} fps · ${info.drawCalls} draws · ${( info.triangles / 1000 ).toFixed( 0 )}k tris · ${this.quality.name} · ${this.rs.backend} · pr ${this.rs.pixelRatio.toFixed( 2 )}${this.xrInfo ? ` · XR multiview ${this.xrInfo.multiview ? 'ON' : 'off'}` : ''}` );
+
+		} else this.hud.debug( '' );
+
+	}
+
+	_raceFrame( dt ) {
+
+		const race = this.race;
+		if ( this._needsRecenter != null ) {
+
+			this._needsRecenter -= dt;
+			if ( this._needsRecenter <= 0 ) {
+
+				this._needsRecenter = null; this._recenterXR();
+
+			}
+
+		}
+
+		let simDt = this.paused ? 0 : dt;
+		if ( this.slowmoFinish > 0 ) {
+
+			this.slowmoFinish -= dt;
+			simDt *= 0.4;
+
+		}
+
+		// --- input → physics (fixed 120 Hz) ---
+		const controls = { ...this.input.state };
+		if ( this.autopilotPlayer && race.phase === 'race' ) {
+
+			race.autopilot.update( simDt, { raceActive: true } );
+			Object.assign( controls, race.player.physics.controls );
+
+		}
+
+		if ( race.phase === 'staging' && controls.throttle > 0.5 ) {
+
+			this.stagingHold += dt;
+			if ( this.stagingHold > 0.8 ) race.beginCountdown();
+
+		} else this.stagingHold = 0;
+		if ( race.phase === 'staging' && race.phaseTime > 25 ) race.beginCountdown();
+
+		this.acc += simDt;
+		let steps = 0;
+		while ( this.acc >= PHYS_DT && steps < 10 ) {
+
+			race.step( PHYS_DT, controls );
+			this.acc -= PHYS_DT;
+			steps ++;
+
+		}
+
+		if ( steps >= 10 ) this.acc = 0;
+		race.update( simDt );
+
+		// physics events -> haptics / audio cues
+		for ( const c of race.cars ) {
+
+			for ( const e of c.physics.events ) {
+
+				if ( c === race.player ) {
+
+					this.xrControls.onPhysicsEvent( e );
+					if ( e.type === 'wallHit' ) {
+
+						audio.thud( clamp( e.impact / 8, 0.25, 0.8 ) );
+						this.shake = 1;
+
+					}
+
+					if ( e.type === 'gutterClip' ) audio.noiseBurst( { dur: 0.12, freq: 180, q: 1, gain: 0.35, type: 'lowpass' } );
+					if ( e.type === 'shiftDenied' ) audio.beep( 300, 0.08, 0.15, 'ui', 'square' );
+
+				}
+
+			}
+
+			c.physics.events.length = 0;
+
+		}
+
+		if ( race.respawnPrompt > 3 && race.phase === 'race' ) {
+
+			this.hud.toast( 'Stuck? Press R / X (gamepad) to reset', 1 );
+			if ( race.respawnPrompt > 7 ) race.respawn();
+
+		}
+
+		uTime.value += simDt;
+
+		// --- camera, cockpit, FX ---
+		this._updateCamera( dt );
+		const tel = race.player.telemetry;
+		// flatscreen: the wheel mirrors the rack (±135° at full lock); in VR the hands drive it
+		if ( ! this.xrSession.presenting ) this.cockpit.wheelAngle = race.player.physics.steerAngle / race.player.spec.steerLock * Math.PI * 0.75;
+		this.cockpit.update( dt, tel, race.player.physics );
+		this.fx.beginFrame();
+		if ( simDt > 0 ) for ( const c of race.cars ) this.fx.emitForCar( c, simDt );
+		this.fx.endFrame();
+		this.camera.getWorldPosition( _v );
+		this.petals.update( _v, race.cars.map( ( c ) => ( { x: c.physics.x, y: c.physics.y, z: c.physics.z, vx: c.physics.vx, vz: c.physics.vz, drift: c.telemetry.drift } ) ) );
+		this.world.update( dt, _v, this.camera.far );
+		const vigOn = settings.vignette === 'always' || ( settings.vignette === 'auto' && this.xrSession.presenting );
+		this.vignette.update( dt, race.player.physics.yawRate, race.player.physics.slipAngle, settings.vignetteStrength, vigOn && ( this.cameraMode === 'cockpit' || this.xrSession.presenting ) );
+
+		// --- HUD ---
+		const hd = race.hudData();
+		hd.countdown = this.countdownTimer > 0 ? this.countdownText : null;
+		if ( this.countdownTimer > 0 ) {
+
+			this.countdownTimer -= dt;
+			if ( this.countdownTimer <= 0 ) this.hud.countdown( '' );
+
+		}
+
+		this.hud.update( dt, hd );
+		this.telemetry.update( dt, hd );
+		this.phone.update( dt, hd );
+
+		// --- audio ---
+		this._listener( this.camera );
+		const lp = _v.clone();
+		this.carAudio?.forEach( ( a ) => a.update( simDt || 0, lp, this.slowmoFinish > 0 ? 0.4 : 1 ) );
+		this.ambience.update( dt );
+
+		// --- render ---
+		if ( this.cockpit.group.visible && ! this.paused ) this.cockpit.renderMirrors( this.rs.renderer, this.scene );
+		this.rs.render( this.scene, this.camera, this.cameraMode === 'chase' ? tel.drift : tel.drift * 0.5 );
+
+	}
+
+	_replayFrame( dt ) {
+
+		const r = this.replay;
+		const scale = r.update( dt );
+		uTime.value += dt * scale;
+		if ( this.xrSession.presenting ) {
+
+			// spectator: teleport the rig between roadside spotter points
+			const res = r.director.update( this.camera, 0, r.cars[ r.focus ], 'spotter', r.time, null );
+			const sp = r.director.spot;
+			if ( sp && sp !== this._vrSpot ) {
+
+				this._vrSpot = sp;
+				this.rig.position.set( sp.pos.x, sp.pos.y - 1.6, sp.pos.z );
+
+			}
+
+			r.slowmo = res.slowmo;
+			this.camera.position.set( 0, 0, 0 );
+
+		} else {
+
+			const res = r.updateCamera( this.camera, dt, this.cockpit.eye );
+			this.menus.updateReplay( r.time, r.duration, r.playing, r.slowmo, res.mode );
+
+		}
+
+		this.fx.beginFrame();
+		if ( scale > 0 ) for ( const c of r.cars ) this.fx.emitForCar( c, dt * scale );
+		this.fx.endFrame();
+		this.camera.getWorldPosition( _v );
+		const focus = r.cars[ r.focus ];
+		this.petals.update( _v, r.cars.map( ( c ) => ( { x: c.physics.x, y: c.physics.y, z: c.physics.z, vx: c.physics.vx, vz: c.physics.vz, drift: c.telemetry.drift } ) ) );
+		this.world.update( dt, _v, this.camera.far );
+		this._listener( this.camera );
+		this.carAudio?.forEach( ( a ) => a.update( dt * scale, _v.clone(), scale ) );
+		this.vignette.update( dt, 0, 0, 0, false );
+		this.rs.render( this.scene, this.camera, focus.telemetry.drift * 0.6 );
+
+	}
+
+	_listener( cam ) {
+
+		if ( ! audio.ready ) return;
+		const c = this.xrSession.presenting ? this.rs.renderer.xr.getCamera() : cam;
+		c.getWorldPosition( _v );
+		c.getWorldQuaternion( _q );
+		_f.set( 0, 0, - 1 ).applyQuaternion( _q );
+		_u.set( 0, 1, 0 ).applyQuaternion( _q );
+		audio.setListener( _v, _f, _u );
+
+	}
+
+}
+
+export { progress };
