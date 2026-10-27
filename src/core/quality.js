@@ -76,7 +76,7 @@ export const PRESETS = {
 		sparkParticles: 128,
 		mirrors: true,
 		mirrorSize: 768,
-		mirrorRate: 1,
+		mirrorRate: 2,
 		drawDistance: 1400,
 		fogDensity: 0.7,
 		treeDensity: 1.0,

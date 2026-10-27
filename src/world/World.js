@@ -4,6 +4,7 @@ import { TerrainField } from './TerrainField.js';
 import { Terrain } from './Terrain.js';
 import { classifySides, buildRoad, buildLampPools } from './TrackMesh.js';
 import { buildLocations, defineLots } from './Locations.js';
+import { buildLightShafts } from './LightShafts.js';
 import { createRoadAtlas, createGlowTexture } from '../render/textures.js';
 import { toonMaterial, uMoonDir } from '../render/toon.js';
 import { createSky, FOG_COLOR } from '../render/sky.js';
@@ -50,6 +51,7 @@ export class World {
 		this.root.add( this.lampPools );
 		this.locations = buildLocations( this.track, this.field, this.roadMaterial, q );
 		this.root.add( this.locations.group );
+		if ( q.lightShafts ) this.root.add( buildLightShafts( this.track, lamps, this.field ) );
 
 		this.sky = createSky();
 		this.scene.add( this.sky );

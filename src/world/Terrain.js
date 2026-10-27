@@ -117,7 +117,18 @@ export class Terrain {
 		const lo = this._chunkMesh( H, D, N, 4, x0, z0, step, trees, 1 );
 		lod.addLevel( hi, 0 );
 		lod.addLevel( lo, 300 );
-		lod.position.set( 0, 0, 0 );
+		// LOD distance is measured from the object's origin, so centre each
+		// chunk's LOD on the chunk and offset the (world-space) meshes back.
+		let hs = 0;
+		for ( let k = 0; k < H.length; k ++ ) hs += H[ k ];
+		lod.position.set( x0 + size / 2, hs / H.length, z0 + size / 2 );
+		for ( const m of [ hi, lo ] ) {
+
+			m.position.copy( lod.position ).negate();
+			m.updateMatrix();
+
+		}
+
 		return lod;
 
 	}
@@ -167,7 +178,19 @@ export class Terrain {
 			for ( let i = 0; i <= M; i ++ ) {
 
 				const gi = i * stride, gj = j * stride;
-				const h = H[ gj * ( N + 1 ) + gi ];
+				let h = H[ gj * ( N + 1 ) + gi ];
+				// coarse LOD near the road: take the lowest fine sample around the
+				// vertex so the 20 m grid never cuts through the asphalt
+				if ( stride > 1 && D[ gj * ( N + 1 ) + gi ] < 70 ) {
+
+					for ( let dj = - stride; dj <= stride; dj ++ ) for ( let di = - stride; di <= stride; di ++ ) {
+
+						const ii = Math.min( N, Math.max( 0, gi + di ) ), jj = Math.min( N, Math.max( 0, gj + dj ) );
+						h = Math.min( h, H[ jj * ( N + 1 ) + ii ] - 0.4 );
+
+					}
+
+				}
 				const hx = H[ gj * ( N + 1 ) + Math.min( N, gi + stride ) ] - H[ gj * ( N + 1 ) + Math.max( 0, gi - stride ) ];
 				const hz = H[ Math.min( N, gj + stride ) * ( N + 1 ) + gi ] - H[ Math.max( 0, gj - stride ) * ( N + 1 ) + gi ];
 				const slope = Math.hypot( hx, hz ) / ( 2 * st );

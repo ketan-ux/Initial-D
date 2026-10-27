@@ -211,7 +211,7 @@ export class FX {
 	}
 
 	// Emit from a car based on its physics state.
-	emitForCar( car, dt ) {
+	emitForCar( car, dt, { skipHeadGlow = false } = {} ) {
 
 		const p = car.physics, tel = car.telemetry, m = car.model;
 		const intensity = Math.max( tel.drift, tel.wheelspin * 0.8, p.controls.handbrake > 0.5 && p.speed > 6 ? 0.6 : 0 );
@@ -265,12 +265,12 @@ export class FX {
 
 		}
 
-		if ( head > 0.05 ) {
+		if ( head > 0.05 && ! skipHeadGlow ) {
 
 			for ( const a of m.headAnchors ) {
 
 				a.getWorldPosition( _v );
-				this.glows.add( _v, 1.0, 1.0, 0.92, 0.75, head * 0.9 );
+				this.glows.add( _v, 0.55, 1.0, 0.92, 0.75, head * 0.8 );
 
 			}
 

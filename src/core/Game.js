@@ -141,9 +141,10 @@ export class Game {
 		this.garage.enter();
 		renderer.setAnimationLoop( ( t, frame ) => this._loop( t, frame ) );
 		window.__game = this;
+		if ( this.params.has( 'noadapt' ) ) setSetting( 'adaptiveResolution', false );
 		if ( this.params.has( 'autostart' ) ) {
 
-			this._start();
+			await this._start();
 			this.startRace();
 			if ( this.params.has( 'autopilot' ) ) {
 
@@ -347,7 +348,19 @@ export class Game {
 		} );
 		bus.on( 'race-phase', ( p ) => {
 
-			if ( p === 'race' ) this.ambience.setLevel( 0.25 );
+			if ( p === 'race' ) {
+
+				this.ambience.setLevel( 0.25 );
+				// test hook: ?skipto=<metres> teleports the field down the mountain
+				const skip = +this.params.get( 'skipto' );
+				if ( skip > 0 ) {
+
+					this.race.player.reset( skip, 1.5, 24 );
+					this.race.rival?.reset( skip + 8, - 1.5, 24 );
+
+				}
+
+			}
 			if ( p === 'finish' ) {
 
 				this.hud.toast( this.race.rival ? ( this.race.won ? 'WIN' : 'LOSE' ) : 'FINISH', 2.5 );
@@ -491,7 +504,7 @@ export class Game {
 		if ( ! this.race || this.race.recorder.frames < 10 ) return;
 		this.state = 'replay';
 		this.menus.hideAll();
-		this.replay = new ReplayPlayer( this.race.recorder, this.race.cars, this.track );
+		this.replay = new ReplayPlayer( this.race.recorder, this.race.cars, this.track, this.world.field );
 		this.radio.clear();
 		this.hud.show( false );
 		this.touch?.show( false );
@@ -692,7 +705,7 @@ export class Game {
 			this.cockpit.eye.add( this.rig );
 			this.rig.position.set( 0, 0, 0 );
 			this.rig.rotation.set( 0, Math.PI * 0, 0 );
-			this.camera.fov = 72;
+			this.camera.fov = 66;
 
 		} else {
 
@@ -745,7 +758,7 @@ export class Game {
 			this.rig.rotation.set( 0, Math.PI + this.lookYaw, 0 );
 			const sh = this._shakeAmount( dt );
 			this.camera.position.set( ( Math.random() - 0.5 ) * sh * 0.01, ( Math.random() - 0.5 ) * sh * 0.012, 0 );
-			const fov = 72 + clamp( p.speed / 50, 0, 1 ) * 6;
+			const fov = 66 + clamp( p.speed / 50, 0, 1 ) * 6;
 			if ( Math.abs( this.camera.fov - fov ) > 0.05 ) {
 
 				this.camera.fov = damp( this.camera.fov, fov, 3, dt ); this.camera.updateProjectionMatrix();
@@ -1033,7 +1046,8 @@ export class Game {
 		if ( ! this.xrSession.presenting ) this.cockpit.wheelAngle = race.player.physics.steerAngle / race.player.spec.steerLock * Math.PI * 0.75;
 		this.cockpit.update( dt, tel, race.player.physics );
 		this.fx.beginFrame();
-		if ( simDt > 0 ) for ( const c of race.cars ) this.fx.emitForCar( c, simDt );
+		const inCabin = this.cameraMode === 'cockpit' || this.xrSession.presenting;
+		if ( simDt > 0 ) for ( const c of race.cars ) this.fx.emitForCar( c, simDt, { skipHeadGlow: inCabin && c === race.player } );
 		this.fx.endFrame();
 		this.camera.getWorldPosition( _v );
 		this.petals.update( _v, race.cars.map( ( c ) => ( { x: c.physics.x, y: c.physics.y, z: c.physics.z, vx: c.physics.vx, vz: c.physics.vz, drift: c.telemetry.drift } ) ) );

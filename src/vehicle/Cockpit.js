@@ -21,8 +21,10 @@ export class Cockpit {
 		this.group.name = 'cockpit';
 		carModel.chassis.add( this.group );
 		const spec = this.spec;
-		const fSeat = spec.glass.pillars[ 1 ] ? spec.glass.pillars[ 1 ][ 0 ] - 0.12 : 2.45;
-		this.eyePos = new THREE.Vector3( - 0.36, spec.id === 'fd3s' ? 0.98 : 1.06, carModel.zOf( fSeat ) );
+		// driver's eye ~0.5 m behind the top of the windshield (roughly level
+		// with the B-pillar), which leaves room for dash, cluster and wheel
+		const fEye = spec.glass.windshield[ 1 ] + 0.5;
+		this.eyePos = new THREE.Vector3( - 0.36, spec.id === 'fd3s' ? 0.98 : 1.05, carModel.zOf( fEye ) );
 		this.eye = new THREE.Object3D();
 		this.eye.position.copy( this.eyePos );
 		this.group.add( this.eye );
@@ -58,8 +60,8 @@ export class Cockpit {
 		b.addGeometry( box( halfW * 2, 0.32, 0.08 ), M( 0, dashTopY - 0.17, dashZ - 0.44 ) );
 		// gauge binnacle hood over the cluster (in front of the driver)
 		b.setColor( INTERIOR );
-		b.addGeometry( box( 0.44, 0.05, 0.2 ), M( e.x, dashTopY + 0.09, dashZ - 0.36, 0.15 ) );
-		b.addGeometry( box( 0.44, 0.12, 0.04 ), M( e.x, dashTopY + 0.03, dashZ - 0.27 ) );
+		b.addGeometry( box( 0.46, 0.035, 0.2 ), M( e.x, dashTopY + 0.2, dashZ - 0.33, 0.12 ) );
+		b.addGeometry( box( 0.44, 0.22, 0.03 ), M( e.x, dashTopY + 0.08, dashZ - 0.31, - 0.3 ) );
 		// centre console + tunnel
 		b.setColor( INTERIOR_DARK );
 		b.addGeometry( box( 0.24, 0.3, 0.55 ), M( 0.02, dashTopY - 0.32, dashZ - 0.7 ) );
@@ -123,7 +125,7 @@ export class Cockpit {
 		// steering column shroud
 		b.setColor( INTERIOR_DARK );
 		const colTilt = - 0.42;
-		this.wheelCenter = new THREE.Vector3( e.x, e.y - 0.25, e.z + 0.42 );
+		this.wheelCenter = new THREE.Vector3( e.x, e.y - 0.3, e.z + 0.42 );
 		b.addGeometry( box( 0.1, 0.1, 0.3 ), M( e.x, this.wheelCenter.y - 0.06, this.wheelCenter.z + 0.16, colTilt ) );
 
 		// dashboard switches (VR-pressable): pop-up headlights, hazard, HUD
@@ -174,8 +176,10 @@ export class Cockpit {
 		this.drawGaugeFace();
 		const face = new THREE.Mesh( new THREE.PlaneGeometry( 0.38, 0.19 ), emissiveMaterial( 0xffffff, 1.0 ) );
 		face.material.map = this.gaugeTex;
-		face.position.set( e.x, dashTopY + 0.02, dashZ - 0.29 );
-		face.rotation.set( - 0.25, Math.PI, 0 );
+		// sits on the dash under the binnacle hood, tilted back toward the eye,
+		// visible just above the steering wheel rim
+		face.position.set( e.x, dashTopY + 0.085, dashZ - 0.335 );
+		face.rotation.set( 0.3, Math.PI, 0 );
 		this.group.add( face );
 		this.gaugeFace = face;
 		// needles live in the face's local space; face is rotated PI so local +x is car right
@@ -383,7 +387,7 @@ export class Cockpit {
 	_buildMirrors( sW, roofY, dashZ ) {
 
 		const q = this.quality;
-		this.mirrorCam = new THREE.PerspectiveCamera( 32, 3.2, 0.5, 220 );
+		this.mirrorCam = new THREE.PerspectiveCamera( 32, 3.2, 0.5, 120 ); // short far plane = fewer chunks drawn
 		this.mirrorCam.position.set( 0, roofY + 0.05, this.model.zOf( this.spec.length - 0.2 ) );
 		// cameras look down local -z, which is the car's rear: no rotation needed
 		// only layer 0: particles on LAYER_NO_MIRROR (5) are skipped in mirrors

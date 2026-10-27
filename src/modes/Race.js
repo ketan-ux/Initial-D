@@ -489,7 +489,7 @@ export class Race {
 			const parkS = lot.parkS + k * 7;
 			const remain = parkS - p.s;
 			ai.targetLateral = p.s > lot.s0 + 20 ? lot.parkLateral + ( k ? 0 : 0 ) : null;
-			ai.targetSpeedOverride = clamp( remain * 0.45, 0, 18 );
+			ai.targetSpeedOverride = clamp( remain * 0.4, 0, 14 ); // roll into the lot at ~50 km/h
 			if ( remain < 1.5 ) {
 
 				ai.targetSpeedOverride = 0;

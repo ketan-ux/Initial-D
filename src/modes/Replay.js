@@ -105,7 +105,7 @@ const _qa = new THREE.Quaternion(), _qb = new THREE.Quaternion();
 // fields that audio/FX read are filled in so they keep working).
 export class ReplayPlayer {
 
-	constructor( recorder, cars, track ) {
+	constructor( recorder, cars, track, field ) {
 
 		this.rec = recorder;
 		this.cars = cars;
@@ -116,7 +116,7 @@ export class ReplayPlayer {
 		this.slowmo = 1;
 		this.focus = 0;
 		this.camMode = 'director';
-		this.director = new Director( track );
+		this.director = new Director( track, field );
 		this.loop = true;
 
 	}
@@ -185,7 +185,7 @@ export class ReplayPlayer {
 			m.popupTarget = m.popupAngle = L( F.head );
 			m.update( 0, { steerAngle: p.steerAngle, wheelSpin: p.wheelSpin, brake: p.controls.brake, reversing: p.gear === - 1, discHeat: p.discHeat } );
 			const head = m.uniforms.head.value;
-			for ( const s of car.spots ) s.intensity = head * 110;
+			for ( const s of car.spots ) s.intensity = head * 42;
 			if ( car.pool ) car.pool.material.opacity = head * 0.55;
 
 		} );
@@ -210,9 +210,10 @@ const _v = new THREE.Vector3(), _t = new THREE.Vector3();
 // onboard, and slow-motion apex captures in auto mode.
 class Director {
 
-	constructor( track ) {
+	constructor( track, field ) {
 
 		this.track = track;
+		this.field = field;
 		this.spots = [];
 		// roadside camera positions on the outside of corners (and a few on straights)
 		for ( let i = 20; i < track.count - 20; i += 18 ) {
@@ -222,11 +223,11 @@ class Director {
 			const wall = side > 0 ? track.wallL[ i ] : track.wallR[ i ];
 			const lat = side * ( wall + 1.8 );
 			const p = track.pointAt( i * track.spacing, 0 );
-			this.spots.push( {
-				s: i * track.spacing,
-				pos: new THREE.Vector3( p.x + p.lx * lat, p.y + 1.4 + ( i % 3 ) * 0.9, p.z + p.lz * lat ),
-				apex: Math.abs( k ) > 1 / 30
-			} );
+			const x = p.x + p.lx * lat, z = p.z + p.lz * lat;
+			// never inside a cut: stand on the bank if the ground is higher than the road
+			const ground = field ? field.height( x, z ) : p.y;
+			const y = Math.max( p.y + 1.4 + ( i % 3 ) * 0.9, ground + 1.6 );
+			this.spots.push( { s: i * track.spacing, pos: new THREE.Vector3( x, y, z ), apex: Math.abs( k ) > 1 / 30 } );
 
 		}
 
@@ -316,6 +317,7 @@ class Director {
 			this.droneAng += dt * 0.25;
 			const off = new THREE.Vector3( Math.sin( heading + Math.PI + Math.sin( this.droneAng ) * 0.9 ) * 13, 7.5, Math.cos( heading + Math.PI + Math.sin( this.droneAng ) * 0.9 ) * 13 );
 			const want = _t.clone().add( off );
+			if ( this.field ) want.y = Math.max( want.y, this.field.height( want.x, want.z ) + 3 );
 			this.camPos.lerp( want, this.initialized ? Math.min( 1, dt * 2 ) : 1 );
 			this.look.lerp( _t, this.initialized ? Math.min( 1, dt * 6 ) : 1 );
 			fov = 48;

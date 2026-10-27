@@ -1,12 +1,14 @@
 // Drive the real game in headless Chromium and take screenshots.
 // Usage: node tests/game-shot.mjs <query> <outPrefix> <script>
-// script: comma list of steps: wait:<ms> | shot:<name> | click:<selector> | key:<code> | eval:<js>
+// script: '|'-separated steps: wait:<ms> | shot:<name> | click:<selector> | key:<code> | eval:<js>
 import { createRequire } from 'module';
 const require = createRequire( import.meta.url );
 const { chromium } = require( 'playwright' );
 const [ query = '', prefix = '/tmp/shot', script = 'wait:1000,shot:a' ] = process.argv.slice( 2 );
 const browser = await chromium.launch( { args: [ '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--autoplay-policy=no-user-gesture-required' ] } );
-const page = await browser.newPage( { viewport: { width: 1280, height: 720 } } );
+const [ vw, vh ] = ( process.env.VIEWPORT || '1280x720' ).split( 'x' ).map( Number );
+const page = await browser.newPage( { viewport: { width: vw, height: vh } } );
+page.setDefaultTimeout( 120000 );
 const errors = [];
 page.on( 'console', ( m ) => {
 
@@ -18,7 +20,7 @@ page.on( 'console', ( m ) => {
 page.on( 'pageerror', ( e ) => errors.push( 'pageerror: ' + e.message + ' ' + ( e.stack || '' ).split( '\n' ).slice( 0, 3 ).join( ' | ' ) ) );
 await page.goto( 'http://localhost:5173/' + query );
 await page.waitForFunction( () => window.__game && window.__game.state !== 'loading', null, { timeout: 240000 } ).catch( () => console.log( 'TIMEOUT loading' ) );
-for ( const step of script.split( ',' ) ) {
+for ( const step of script.split( '|' ) ) {
 
 	const [ k, ...rest ] = step.split( ':' );
 	const v = rest.join( ':' );
