@@ -132,7 +132,7 @@ kbd { display: inline-block; background: var(--paper); color: var(--ink); border
 .g-best { font-family: var(--display); font-style: italic; font-weight: 700; font-size: 13px; color: var(--yellow); text-shadow: var(--ink-stroke); }
 
 /* staging prompt */
-.staging { left: 50%; top: 13%; transform: translateX(-50%); flex-direction: column; align-items: center; gap: 10px; text-align: center; }
+.staging { left: 50%; top: calc(13% + 44px); transform: translateX(-50%); flex-direction: column; align-items: center; gap: 10px; text-align: center; }
 .st-title { font-size: 28px; }
 .st-msg { font-family: var(--display); font-style: italic; font-weight: 700; font-size: 15px; text-shadow: var(--ink-stroke); }
 
@@ -182,7 +182,7 @@ kbd { display: inline-block; background: var(--paper); color: var(--ink); border
 .replaybar .slowmo.on { opacity: 1; }
 
 /* ==========================================================================
-   HUD — position + timeline (TL), time + drift score (TR), minimap (BL),
+   HUD — position + course map + digital speed on touch (TL), time + drift score (TR), minimap (BL),
    arc tachometer + gear + speed + turbo (BR); compact variant in the cockpit
    ========================================================================== */
 .hud { position: absolute; inset: 0; font-variant-numeric: tabular-nums; }
@@ -192,14 +192,6 @@ kbd { display: inline-block; background: var(--paper); color: var(--ink); border
 .hud-pos .big { font-family: var(--display); font-style: italic; font-weight: 900; font-size: 58px; line-height: 1; color: #fff; text-shadow: var(--ink-stroke); }
 .hud-pos .big sup { font-size: 0.5em; vertical-align: 0.6em; margin-left: 2px; }
 .hud-pos .of { font-family: var(--display); font-style: italic; font-weight: 800; font-size: 34px; color: #fff; text-shadow: var(--ink-stroke); margin-left: 4px; }
-.timeline { position: relative; width: 210px; height: 26px; margin-top: 6px; }
-.timeline .track { position: absolute; left: 0; right: 0; top: 9px; height: 4px; background: #fff; box-shadow: 0 0 0 2px var(--ink); }
-.timeline .done { position: absolute; left: 0; top: 9px; height: 4px; background: var(--orange); }
-.timeline .tick { position: absolute; top: 5px; width: 3px; height: 12px; background: #fff; box-shadow: 0 0 0 1.5px var(--ink); }
-.timeline .car { position: absolute; top: 2px; width: 18px; height: 18px; margin-left: -9px; border: 2px solid var(--ink); border-radius: 50%; }
-.timeline .car.me { background: var(--orange); z-index: 2; }
-.timeline .car.rival { background: var(--yellow); width: 12px; height: 12px; margin-left: -6px; top: 5px; }
-.timeline .lbl { position: absolute; left: 0; top: 19px; font-size: 9px; font-weight: 800; letter-spacing: 0.12em; text-shadow: var(--ink-stroke); }
 .hud-time { position: absolute; right: 26px; top: 12px; text-align: right; }
 .hud-time .t-main { font-family: var(--display); font-style: italic; font-weight: 800; font-size: 50px; line-height: 1; text-shadow: var(--ink-stroke); }
 .hud-time .t-gap { font-family: var(--display); font-style: italic; font-weight: 800; font-size: 20px; text-shadow: var(--ink-stroke); }
@@ -212,7 +204,16 @@ kbd { display: inline-block; background: var(--paper); color: var(--ink); border
 .drift.pop .d-mult { animation: pop .25s; }
 @keyframes pop { 50% { transform: scale(1.25); } }
 .hud-section { font-family: var(--display); font-style: italic; font-weight: 800; font-size: 13px; letter-spacing: 0.1em; text-transform: uppercase; text-shadow: var(--ink-stroke); margin-top: 4px; }
-.hud-map { position: absolute; left: 22px; bottom: calc(18px + var(--safe-b)); width: 210px; height: 170px; }
+.hud-map { width: 210px; height: 150px; margin-top: 2px; }
+.hud-digi { display: none; align-items: baseline; gap: 6px; margin-top: 4px; font-family: var(--display); font-style: italic; text-shadow: var(--ink-stroke); }
+.hud.touch .hud-digi { display: flex; flex-wrap: wrap; width: 170px; }
+.dg-spd { font-size: 40px; font-weight: 900; line-height: 1; min-width: 2.2ch; text-align: right; }
+.dg-unit { font-size: 13px; font-weight: 800; }
+.dg-gear { margin-left: auto; font-size: 34px; font-weight: 900; line-height: 1; color: var(--yellow); }
+.dg-rpm { flex-basis: 100%; height: 6px; background: rgba(13,10,18,0.7); border: 2px solid var(--ink); transform: skewX(var(--skew)); }
+.dg-rpm > div { height: 100%; width: 0; background: linear-gradient(90deg, var(--yellow), var(--orange)); }
+.dg-rpm > div.red { background: var(--red); }
+.hud.touch .hud-tach, .hud.touch .hud-mini { display: none !important; }
 .hud-map canvas { width: 100%; height: 100%; }
 .hud-tach { position: absolute; right: 16px; bottom: calc(8px + var(--safe-b)); width: 280px; height: 240px; }
 .hud-tach svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
@@ -234,7 +235,7 @@ kbd { display: inline-block; background: var(--paper); color: var(--ink); border
 .boost svg { width: 100%; height: 100%; overflow: visible; }
 .hud.shift-light .tach-gear { color: var(--red); }
 /* compact cockpit HUD */
-.hud.fpp .hud-map, .hud.fpp .hud-tach, .hud.fpp .hud-section { display: none; }
+.hud.fpp .hud-tach, .hud.fpp .hud-section { display: none; }
 .hud-mini { position: absolute; right: 26px; bottom: calc(22px + var(--safe-b)); width: 150px; height: 150px; display: none; }
 .hud.fpp .hud-mini { display: block; }
 .hud-mini svg { width: 100%; height: 100%; overflow: visible; }
@@ -259,6 +260,11 @@ kbd { display: inline-block; background: var(--paper); color: var(--ink); border
 .fs-btn { position: absolute; left: 50%; top: calc(8px + env(safe-area-inset-top, 0px)); transform: translateX(-50%) skewX(var(--skew)); z-index: 6; min-height: 36px; min-width: 44px; padding: 2px 10px; font-size: 20px; font-style: normal; line-height: 1; box-shadow: 3px 3px 0 var(--ink); opacity: 0.85; }
 .fs-btn:hover { transform: translateX(-50%) skewX(var(--skew)) translate(-2px, -2px); }
 .fs-btn.on { opacity: 0.45; }
+body.touch-race .fs-btn { display: none; }
+/* dialogs sit above HUD, captions and touch controls; captions hide under menus */
+.pause, .settings, .help, .results, .confirm { z-index: 8; }
+.confirm { z-index: 9; }
+body.paused .captions, body.paused .touch-controls, body.paused .speedlines { display: none !important; }
 .touch-controls { position: absolute; inset: 0; pointer-events: none; }
 .touch-controls > * { pointer-events: auto; }
 .tc-steer { position: absolute; left: 3vw; bottom: calc(5vh + var(--safe-b)); width: min(42vw, 300px); height: 110px; border-radius: 55px; background: rgba(255,255,255,0.1); border: 3px solid rgba(255,255,255,0.4); touch-action: none; }
@@ -288,8 +294,8 @@ kbd { display: inline-block; background: var(--paper); color: var(--ink); border
 	.hud-pos .big { font-size: 38px; } .hud-pos .of { font-size: 22px; }
 	.hud-time .t-main { font-size: 30px; } .drift .d-pts { font-size: 20px; } .drift .d-mult { font-size: 24px; } .drift .d-lbl { font-size: 15px; }
 	.hud-tach { transform: scale(0.62); transform-origin: right bottom; }
-	.hud-map { width: 120px; height: 100px; top: 120px; left: 8px; bottom: auto; }
-	.timeline { width: 150px; }
+	.hud-map { width: 140px; height: 100px; }
+	.hud-pos { left: 12px; top: 8px; }
 	.captions { bottom: calc(32% + var(--safe-b)); max-width: 70vw; }
 	.staging { top: 7%; } .staging .st-msg { display: none; }
 }
@@ -303,3 +309,5 @@ kbd { display: inline-block; background: var(--paper); color: var(--ink); border
 	.title .menu { gap: 6px; } .title .menu button { min-height: 34px; padding: 3px 16px; font-size: 14px; }
 	.title .note { display: none; }
 }
+body.touch-race .staging { top: 64px; }
+body.touch-race .hud-countdown { margin-top: 24px; }

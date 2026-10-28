@@ -206,14 +206,16 @@ export class Cockpit {
 		add( b, TRIM, box( 0.05, 0.012, 0.1 ), M( e.x - 0.09, this.wheelCenter.y - 0.02, this.wheelCenter.z + 0.12, colTilt ) ); // wiper stalk
 
 		// ---- phone mount (body + arm are static, the screen is its own mesh) --
-		const phonePos = new THREE.Vector3( 0.15, cowlY + 0.075, Z( wsF + 0.31 ) );
-		const phoneRot = new THREE.Euler( - 0.12, Math.PI - 0.42, 0, 'YXZ' );
-		const phoneM = new THREE.Matrix4().compose( phonePos, new THREE.Quaternion().setFromEuler( phoneRot ), new THREE.Vector3( 1, 1, 1 ) );
-		this.phoneHalf = { x: 0.04, y: 0.078 };
-		add( b, 0x101014, box( 0.088, 0.168, 0.012 ), phoneM );
-		add( b, 0x24232b, new THREE.CylinderGeometry( 0.007, 0.007, 0.11, 6 ), phoneM.clone().multiply( M( 0, - 0.11, 0.03, 0.5 ) ) );
-		add( b, 0x24232b, new THREE.CylinderGeometry( 0.03, 0.035, 0.012, 12 ), M( phonePos.x, cowlY - 0.005, phonePos.z + 0.07 ) ); // suction foot
-		add( b, 0x24232b, box( 0.1, 0.02, 0.02 ), phoneM.clone().multiply( M( 0, - 0.088, 0.008 ) ) ); // cradle lip
+		// landscape, level, and turned square to the driver's eye so the map reads
+		const phonePos = new THREE.Vector3( 0.1, cowlY + 0.06, Z( wsF + 0.33 ) );
+		const phoneRot = new THREE.Quaternion().setFromRotationMatrix( new THREE.Matrix4().lookAt( e, phonePos, new THREE.Vector3( 0, 1, 0 ) ) );
+		const phoneM = new THREE.Matrix4().compose( phonePos, phoneRot, new THREE.Vector3( 1, 1, 1 ) );
+		this.phoneHalf = { x: 0.078, y: 0.04 };
+		add( b, 0x101014, box( 0.168, 0.088, 0.012 ), phoneM );
+		add( b, 0x24232b, new THREE.CylinderGeometry( 0.007, 0.007, 0.07, 6 ), phoneM.clone().multiply( M( 0, - 0.07, - 0.02, - 0.5 ) ) );
+		add( b, 0x24232b, new THREE.CylinderGeometry( 0.03, 0.035, 0.012, 12 ), M( phonePos.x, cowlY - 0.005, phonePos.z + 0.04 ) ); // suction foot
+		add( b, 0x24232b, box( 0.18, 0.018, 0.02 ), phoneM.clone().multiply( M( 0, - 0.05, 0.008 ) ) ); // cradle lip
+		for ( const sx of [ - 1, 1 ] ) add( b, 0x24232b, box( 0.014, 0.05, 0.02 ), phoneM.clone().multiply( M( sx * 0.088, - 0.02, 0.006 ) ) ); // side grips
 
 		// ---- clip-on cup holder hanging from the centre vent ------------------
 		const cupPos = new THREE.Vector3( stackX + 0.07, faceY0 - 0.205, Z( stackF + 0.1 ) );
@@ -546,14 +548,14 @@ export class Cockpit {
 
 		const g = new THREE.Group();
 		g.position.copy( pos );
-		g.rotation.copy( rot );
+		g.quaternion.copy( rot );
 		this.phoneCanvas = document.createElement( 'canvas' );
-		this.phoneCanvas.width = 180; this.phoneCanvas.height = 340;
+		this.phoneCanvas.width = 340; this.phoneCanvas.height = 180;
 		this.phoneTex = new THREE.CanvasTexture( this.phoneCanvas );
 		this.phoneTex.colorSpace = THREE.NoColorSpace;
 		const screenMat = emissiveMaterial( 0xffffff, 1.0 );
 		screenMat.map = this.phoneTex;
-		const screen = new THREE.Mesh( new THREE.PlaneGeometry( 0.078, 0.156 ), screenMat );
+		const screen = new THREE.Mesh( new THREE.PlaneGeometry( 0.156, 0.078 ), screenMat );
 		screen.position.z = 0.0065;
 		g.add( screen );
 		this.group.add( g );
@@ -611,14 +613,34 @@ export class Cockpit {
 		};
 
 		// rear-view hanging from the header at the car's centreline, angled to the driver
-		this.rearMirror = mk( 0.21, 0.058, 0.32, 0.68, new THREE.Vector3( 0, roofY - 0.085, this.model.zOf( roofF + 0.07 ) ), - 0.38, 0.06 );
-		const stem = new THREE.Mesh( new THREE.CylinderGeometry( 0.008, 0.008, 0.05, 6 ), frameMat );
-		stem.position.set( 0, roofY - 0.04, this.model.zOf( roofF + 0.06 ) );
-		this.group.add( stem );
+		// rear-view: hangs off a mount on the header rail by a short stem
+		const rz = this.model.zOf( roofF + 0.08 );
+		this.rearMirror = mk( 0.21, 0.058, 0.32, 0.68, new THREE.Vector3( 0, roofY - 0.09, rz ), - 0.38, 0.06 );
+		const mb = new GeoBuilder( { color: false } );
+		mb.addGeometry( new THREE.BoxGeometry( 0.06, 0.02, 0.07 ), new THREE.Matrix4().makeTranslation( 0, roofY - 0.012, rz + 0.01 ) ); // mount
+		mb.addGeometry( new THREE.CylinderGeometry( 0.011, 0.011, 0.055, 8 ), new THREE.Matrix4().makeTranslation( 0, roofY - 0.045, rz ) ); // stem
+		mb.addGeometry( new THREE.SphereGeometry( 0.016, 8, 6 ), new THREE.Matrix4().makeTranslation( 0, roofY - 0.068, rz ) ); // ball joint
 		const fm = this.spec.glass.side[ 0 ] + 0.12;
 		const sm = this.model.sections.reduce( ( a, s ) => ( Math.abs( s.f - fm ) < Math.abs( a.f - fm ) ? s : a ), this.model.sections[ 0 ] );
 		this.leftMirror = mk( 0.13, 0.085, 0.72, 1.0, new THREE.Vector3( sm.w1 + 0.1, sm.ybelt + 0.1, this.model.zOf( fm ) - 0.02 ), - 0.55 );
 		this.rightMirror = mk( 0.14, 0.09, 0.0, 0.28, new THREE.Vector3( - sm.w1 - 0.1, sm.ybelt + 0.1, this.model.zOf( fm ) - 0.02 ), 0.3 );
+		// door mirrors: a body-coloured shell behind the glass on an arm that
+		// runs back to a sail plate in the window corner, so they sit on the door
+		for ( const s of [ 1, - 1 ] ) {
+
+			const mz = this.model.zOf( fm ) - 0.02, mx = s * ( sm.w1 + 0.1 ), my = sm.ybelt + 0.1;
+			mb.addGeometry( new THREE.BoxGeometry( 0.17, 0.11, 0.07 ), new THREE.Matrix4().makeRotationY( s > 0 ? - 0.55 : 0.3 ).setPosition( mx, my, mz + 0.045 ) ); // shell
+			const a = new THREE.Vector3( mx - s * 0.04, my - 0.03, mz + 0.03 ), c = new THREE.Vector3( s * ( sm.w1 - 0.02 ), sm.ybelt + 0.03, mz - 0.02 );
+			const len = a.distanceTo( c );
+			const q = new THREE.Quaternion().setFromUnitVectors( new THREE.Vector3( 1, 0, 0 ), c.clone().sub( a ).normalize() );
+			mb.addGeometry( new THREE.BoxGeometry( len, 0.03, 0.045 ), new THREE.Matrix4().compose( a.clone().add( c ).multiplyScalar( 0.5 ), q, new THREE.Vector3( 1, 1, 1 ) ) ); // arm
+			mb.addGeometry( new THREE.BoxGeometry( 0.03, 0.09, 0.12 ), new THREE.Matrix4().makeTranslation( s * ( sm.w1 - 0.03 ), sm.ybelt + 0.05, mz - 0.03 ) ); // sail plate
+
+		}
+
+		const mounts = new THREE.Mesh( mb.build(), frameMat );
+		mounts.name = 'mirrorMounts';
+		this.group.add( mounts );
 		this._mirrorFrame = 0;
 
 	}

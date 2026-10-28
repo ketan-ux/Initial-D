@@ -193,6 +193,7 @@ export class TouchControls {
 				<button class="tc-mini" data-act="camera" aria-label="Switch camera">CAM</button>
 				<button class="tc-mini" data-act="tilt" aria-label="Toggle tilt steering">TILT</button>
 				<button class="tc-mini" data-act="pause" aria-label="Pause">II</button>
+				<button class="tc-mini tc-fs" data-act="fullscreen" aria-label="Toggle fullscreen">⛶</button>
 			</div>`;
 		container.appendChild( el );
 		this.el = el;
@@ -305,6 +306,8 @@ export class TouchControls {
 	show( v ) {
 
 		this.el.style.display = v ? '' : 'none';
+		// the touch bar carries its own fullscreen button while driving
+		document.body.classList.toggle( 'touch-race', v );
 
 	}
 

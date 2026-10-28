@@ -120,6 +120,9 @@ export class Race {
 
 		}
 
+		// grid slots: cars are held here (engine free to rev) until the green lamp
+		this.gridPose = this.cars.map( ( c ) => ( { x: c.physics.x, z: c.physics.z, heading: c.physics.heading } ) );
+
 		this.phase = 'staging';
 		this.phaseTime = 0;
 		this.raceTime = 0;
@@ -196,12 +199,23 @@ export class Race {
 
 		}
 
-		for ( const c of this.cars ) {
+		const held = this.phase === 'staging' || this.phase === 'countdown';
+		this.cars.forEach( ( c, k ) => {
 
-			c.physics.applyAutoReverseControls();
-			c.physics.step( dt );
+			const p = c.physics;
+			p.applyAutoReverseControls();
+			p.step( dt );
+			if ( held ) {
 
-		}
+				// no jump starts: pin the car to its grid slot, keep the revs
+				const g = this.gridPose[ k ];
+				p.x = g.x; p.z = g.z; p.heading = g.heading;
+				p.vx = 0; p.vz = 0; p.yawRate = 0;
+				if ( p.gear !== 1 ) p.gear = 1;
+
+			}
+
+		} );
 
 		if ( this.rival ) this._collide( dt );
 

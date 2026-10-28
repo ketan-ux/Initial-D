@@ -52,7 +52,7 @@ export class Menus {
 		const el = h( `<button class="fs-btn" aria-label="Toggle fullscreen" title="Fullscreen (F)">⛶</button>` );
 		this.root.appendChild( el );
 		const isFs = () => !! ( document.fullscreenElement || document.webkitFullscreenElement );
-		const toggle = async () => {
+		const toggle = this.toggleFullscreen = async () => {
 
 			try {
 
@@ -156,9 +156,15 @@ export class Menus {
 	back() {
 
 		const name = this.top();
-		if ( name === 'confirm' || name === 'settings' || name === 'help' ) {
+		if ( name === 'confirm' ) {
 
 			this.show( name, false ); return true;
+
+		}
+
+		if ( name === 'settings' || name === 'help' ) {
+
+			this.closePage(); return true;
 
 		}
 
@@ -431,7 +437,7 @@ export class Menus {
 		el.querySelector( '.cam' ).addEventListener( 'click', () => this.on.camera() );
 		el.querySelector( '.recenter' ).addEventListener( 'click', () => this.on.recenter() );
 		el.querySelector( '.settings-btn' ).addEventListener( 'click', () => this.openSettings() );
-		el.querySelector( '.help-btn' ).addEventListener( 'click', () => this.show( 'help' ) );
+		el.querySelector( '.help-btn' ).addEventListener( 'click', () => this.openPage( 'help' ) );
 		el.querySelector( '.quit' ).addEventListener( 'click', () => this.confirm( 'Quit to the garage? This run will be lost.', () => this.on.quit() ) );
 
 	}
@@ -586,11 +592,11 @@ export class Menus {
 					<tr><td>HB</td><td>Handbrake</td></tr><tr><td>+ / −</td><td>Shift</td></tr>
 				</table></section>
 			</div>
-			<button class="primary close">Close</button>
+			<button class="primary close">Back</button>
 		</div>` );
 		this.root.appendChild( el );
 		this.panels.help = el;
-		el.querySelector( '.close' ).addEventListener( 'click', () => this.show( 'help', false ) );
+		el.querySelector( '.close' ).addEventListener( 'click', () => this.closePage() );
 
 	}
 
@@ -607,7 +613,7 @@ export class Menus {
 				<button role="tab" data-tab="vr">VR</button>
 			</div>
 			<div class="tabpanes"></div>
-			<div class="g-row"><button class="primary close">Done</button><button class="reset">Reset to defaults</button></div>
+			<div class="g-row"><button class="primary close">Back</button><button class="reset">Reset to defaults</button></div>
 		</div>` );
 		this.root.appendChild( el );
 		this.panels.settings = el;
@@ -709,7 +715,7 @@ export class Menus {
 			el.querySelectorAll( '.pane' ).forEach( ( p ) => ( p.hidden = p.dataset.pane !== b.dataset.tab ) );
 
 		} ) );
-		el.querySelector( '.close' ).addEventListener( 'click', () => this.show( 'settings', false ) );
+		el.querySelector( '.close' ).addEventListener( 'click', () => this.closePage() );
 		el.querySelector( '.reset' ).addEventListener( 'click', () => this.confirm( 'Reset all settings to defaults?', () => {
 
 			resetSettings(); this._syncSettings(); this.on.settingChanged?.( '*' );
@@ -727,7 +733,37 @@ export class Menus {
 	openSettings() {
 
 		this._syncSettings();
-		this.show( 'settings' );
+		this.openPage( 'settings' );
+
+	}
+
+	// One panel at a time: a sub-page (settings, controls) replaces the panel
+	// it was opened from (pause or title) and Back returns to it.
+	openPage( name ) {
+
+		const from = [ 'pause', 'title', 'results' ].find( ( n ) => this.isOpen( n ) ) ?? null;
+		if ( this.page && this.page !== name ) this.show( this.page, false );
+		this.page = name;
+		this.pageFrom = from ?? this.pageFrom;
+		if ( from ) this.show( from, false );
+		this.show( name );
+
+	}
+
+	closePage() {
+
+		if ( ! this.page ) return;
+		this.show( this.page, false );
+		const from = this.pageFrom;
+		this.page = null; this.pageFrom = null;
+		if ( from && this.on.pageReturn?.( from ) !== false ) this.show( from );
+
+	}
+
+	closeAllPages() {
+
+		if ( this.page ) this.show( this.page, false );
+		this.page = null; this.pageFrom = null;
 
 	}
 

@@ -124,7 +124,9 @@ export class Game {
 		this.minimap = new MiniMap( this.track );
 		this.hud = new HUD( ui, this.minimap );
 		this.hud.show( false );
+		this.hud.setTouch( !! this.touch );
 		this.speedLines = new SpeedLines( ui );
+		if ( this.touch && ! this.menus.toggleFullscreen ) this.touch.el.querySelector( '.tc-fs' )?.remove();
 		this.captions = new Captions( ui );
 		this.telemetry = new TelemetryPanel( this.minimap );
 		this.vignette = new ComfortVignette();
@@ -246,7 +248,9 @@ export class Game {
 			},
 			replay: () => this.startReplay(),
 			replayCmd: ( cmd, v ) => this._replayCmd( cmd, v ),
-			settingChanged: ( key ) => this._settingChanged( key )
+			settingChanged: ( key ) => this._settingChanged( key ),
+			// Back from settings/controls: only return to the pause panel if still paused
+			pageReturn: ( from ) => ( from === 'pause' ? this.paused && this.state === 'race' : true )
 		};
 
 	}
@@ -301,12 +305,14 @@ export class Game {
 		i.on( 'pause', () => {
 
 			if ( this.menus.isOpen( 'confirm' ) ) this.menus.show( 'confirm', false );
+			else if ( this.menus.page ) this.menus.closePage();
 			else if ( this.state === 'race' ) this.setPaused( ! this.paused );
 			else if ( this.state === 'replay' ) this._replayCmd( 'exit' );
 			else this.menus.back();
 
 		} );
 		i.on( 'camera', () => this.toggleCamera() );
+		i.on( 'fullscreen', () => this.menus.toggleFullscreen?.() );
 		i.on( 'headlights', () => {
 
 			if ( this.state === 'race' && ! this.paused ) this.toggleHeadlights();
@@ -656,7 +662,9 @@ export class Game {
 
 		if ( this.state !== 'race' ) return;
 		this.paused = p;
+		if ( ! p ) this.menus.closeAllPages();
 		this.menus.show( 'pause', p );
+		document.body.classList.toggle( 'paused', p );
 		if ( p ) audio.suspend(); else audio.resume();
 		if ( this.xrSession.presenting ) {
 

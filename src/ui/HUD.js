@@ -4,9 +4,8 @@ import { settings } from '../core/settings.js';
 const ORD = ( n ) => ( n === 1 ? 'st' : n === 2 ? 'nd' : n === 3 ? 'rd' : 'th' );
 
 // Arcade HUD in the style of the reference frames:
-//  top-left  : big "1st / 2" + course timeline with both cars
+//  top-left  : big "1st / 2" + whole-course map with every car
 //  top-right : race time, gap, DRIFT score with chain multiplier
-//  bot-left  : vector course map with car arrows
 //  bot-right : orange→red arc tachometer, huge gear digit, speed, turbo gauge
 // In the cockpit (class .fpp) it collapses to a compact needle tach.
 export class HUD {
@@ -19,15 +18,15 @@ export class HUD {
 		el.innerHTML = `
 			<div class="hud-pos" aria-live="polite">
 				<span class="big"><span class="pos-n">1</span><sup class="pos-o">st</sup></span><span class="of">/ <span class="pos-t">2</span></span>
-				<div class="timeline"><div class="track"></div><div class="done"></div><div class="ticks"></div><div class="car rival"></div><div class="car me"></div><div class="lbl">TIMELINE</div></div>
+				<div class="hud-map"><canvas width="420" height="300"></canvas></div>
 				<div class="hud-section"></div>
+				<div class="hud-digi" aria-live="off"><span class="dg-spd">0</span><span class="dg-unit">km/h</span><span class="dg-gear">N</span><div class="dg-rpm"><div></div></div></div>
 			</div>
 			<div class="hud-time">
 				<div class="t-main">0:00.00</div>
 				<div class="t-gap"></div>
 				<div class="drift"><div class="d-lbl">DRIFT</div><div class="d-pts">0 pts</div><div class="d-mult">x1.0</div></div>
 			</div>
-			<div class="hud-map"><canvas width="420" height="340"></canvas></div>
 			<div class="hud-tach">
 				<svg viewBox="0 0 280 240" aria-hidden="true">
 					<defs><linearGradient id="tachGrad" x1="0" y1="1" x2="1" y2="0">
@@ -118,20 +117,6 @@ export class HUD {
 		}
 
 		this.q( '.mini-ticks' ).innerHTML = mt;
-		// course timeline section ticks
-		const ticks = this.q( '.ticks' );
-		ticks.innerHTML = '';
-		if ( track ) {
-
-			for ( const tag of [ 'hairpin1', 'carousel', 'hairpin2', 'fiveHairpins', 'finalSection' ] ) {
-
-				const f = clamp( ( track.tags[ tag ] - track.startS ) / ( track.finishS - track.startS ), 0, 1 );
-				ticks.insertAdjacentHTML( 'beforeend', `<div class="tick" style="left:${( f * 100 ).toFixed( 1 )}%"></div>` );
-
-			}
-
-		}
-
 	}
 
 	show( v ) {
@@ -144,6 +129,14 @@ export class HUD {
 	setCockpit( fpp ) {
 
 		this.el.classList.toggle( 'fpp', fpp );
+
+	}
+
+	// Touch layout: the pedals own the bottom corners, so speed/gear move to a
+	// compact digital readout in the top-left block and the tach is dropped.
+	setTouch( on ) {
+
+		this.el.classList.toggle( 'touch', on );
 
 	}
 
@@ -217,12 +210,13 @@ export class HUD {
 		this.q( '.pos-n' ).textContent = pos;
 		this.q( '.pos-o' ).textContent = ORD( pos );
 		this.q( '.pos-t' ).textContent = d.total ?? 1;
-		const prog = clamp( d.progress ?? 0, 0, 1 );
-		this.q( '.timeline .done' ).style.width = `${( prog * 100 ).toFixed( 1 )}%`;
-		this.q( '.timeline .me' ).style.left = `${( prog * 100 ).toFixed( 1 )}%`;
-		const rv = this.q( '.timeline .rival' );
-		rv.style.display = d.rivalProgress == null ? 'none' : '';
-		if ( d.rivalProgress != null ) rv.style.left = `${( clamp( d.rivalProgress, 0, 1 ) * 100 ).toFixed( 1 )}%`;
+		// digital readout (touch layout)
+		this.q( '.dg-spd' ).textContent = spd;
+		this.q( '.dg-unit' ).textContent = units === 'mph' ? 'mph' : 'km/h';
+		this.q( '.dg-gear' ).textContent = gear;
+		const rb = this.q( '.dg-rpm > div' );
+		rb.style.width = `${( f * 100 ).toFixed( 0 )}%`;
+		rb.classList.toggle( 'red', shift );
 		this.q( '.hud-section' ).textContent = d.section ?? '';
 
 		// time / gap / drift
@@ -251,16 +245,16 @@ export class HUD {
 
 		}
 
-		// course map at 15 Hz (whole course, like the reference)
+		// whole-course map with every car, top-left, at 15 Hz
 		this.mapTimer -= dt;
-		if ( this.mapTimer <= 0 && ! this.el.classList.contains( 'fpp' ) ) {
+		if ( this.mapTimer <= 0 ) {
 
 			this.mapTimer = 1 / 15;
 			const ctx = this.mapCtx;
-			ctx.clearRect( 0, 0, 420, 340 );
+			ctx.clearRect( 0, 0, 420, 300 );
 			this.minimap.draw( ctx, {
-				x: 0, y: 0, w: 420, h: 340, mode: 'overview', cars: d.cars,
-				line: '#ffffff', outline: '#0d0a12', lineScale: 1.6
+				x: 0, y: 0, w: 420, h: 300, mode: 'overview', cars: d.cars,
+				line: '#ffffff', outline: '#0d0a12', lineScale: 1.5
 			} );
 
 		}

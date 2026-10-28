@@ -85,8 +85,8 @@ Menus work with the mouse, the keyboard (arrows and Enter), a gamepad
   three-spoke wheel with gloved hands and forearms, and working mirrors
   (one shared render target).
 - **HUDs:**
-  - Arcade HUD: race position and course timeline, race time and gap, drift
-    score with chain multiplier, an outlined course map, and an orange-to-red
+  - Arcade HUD: race position and a whole-course map with every car (top left), race time and gap, drift
+    score with chain multiplier, and an orange-to-red
     arc tachometer with a big gear digit, speed and a turbo gauge.
   - In the cockpit the arcade HUD collapses to a compact tach.
   - Other HUD modes: diegetic only, projected on the windshield, or a floating
