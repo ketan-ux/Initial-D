@@ -1,0 +1,13 @@
+{
+	// Static-assets Worker: `npm run build` writes dist/, `wrangler deploy` uploads it.
+	// Having this file means Wrangler deploys as-is instead of trying to
+	// auto-configure (and rewrite) the Vite config.
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "initial-d",
+	"compatibility_date": "2026-10-23",
+	"assets": {
+		"directory": "./dist",
+		"not_found_handling": "single-page-application"
+	},
+	"observability": { "enabled": true }
+}

@@ -8,7 +8,8 @@
     "dev": "vite",
     "dev:https": "vite --mode https --host",
     "build": "vite build",
-    "preview": "vite preview --host"
+    "preview": "vite preview --host",
+    "deploy": "npm run build && wrangler deploy"
   },
   "license": "MIT",
   "dependencies": {

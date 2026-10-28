@@ -277,6 +277,9 @@ export class CarModel {
 		lights.name = 'lights';
 		this.lights = lights;
 		this.chassis.add( body, glass, lights );
+		this.doorMirrors = new THREE.Mesh( this._mirrorGeo, this.bodyMaterial );
+		this.doorMirrors.name = 'doorMirrors';
+		this.chassis.add( this.doorMirrors );
 
 		if ( this.quality.outlines ) {
 
@@ -323,13 +326,18 @@ export class CarModel {
 		bodyB.addGeometry( plate, m( 0, 0.36, zF + 0.05 ), { uvRemap: plateUV } );
 		bodyB.addGeometry( plate, m( 0, 0.52, zR - 0.025, 0, Math.PI, 0 ), { uvRemap: plateUV } );
 		// side mirrors on the doors
+		// door mirrors: their own small mesh so the cabin view can hide them
+		// (the cockpit has its own working mirrors in the same spot)
 		const fm = spec.glass.side[ 0 ] + 0.12;
 		const sm = secAt( fm );
+		const mirB = new GeoBuilder( { color: false } );
 		for ( const s of [ 1, - 1 ] ) {
 
-			bodyB.addGeometry( box( 0.16, 0.1, 0.16 ), m( s * ( sm.w1 + 0.06 ), sm.ybelt + 0.1, this.zOf( fm ) ), sw( 'black' ) );
+			mirB.addGeometry( box( 0.16, 0.1, 0.16 ), m( s * ( sm.w1 + 0.06 ), sm.ybelt + 0.1, this.zOf( fm ) ), sw( 'black' ) );
 
 		}
+
+		this._mirrorGeo = mirB.build();
 
 		// spoiler
 		if ( spec.spoiler === 'trunk' ) {
@@ -461,10 +469,13 @@ export class CarModel {
 				uvRemap: ( u, v ) => [ ( pu.f + ( 1 - v ) * pu.d ) / spec.length, TOP_V0 + ( ( x + 1 ) / 2 ) * ( TOP_V1 - TOP_V0 ) ]
 			} );
 			// lens on the underside: faces forward once the pod stands up
-			const lens = new THREE.PlaneGeometry( pu.w * 0.86, pu.d * 0.8 );
-			lens.rotateX( Math.PI / 2 );
-			lensB.setColor( 0xfff4d6 ).setGlow( 4 );
-			lensB.addGeometry( lens, new THREE.Matrix4().makeTranslation( x, - h - 0.003, pu.d / 2 ) );
+			// dark bezel with an inset, rounded lens so an open pod reads as a lamp
+			const bezel = new THREE.PlaneGeometry( pu.w * 0.94, pu.d * 0.9 ).rotateX( Math.PI / 2 );
+			lensB.setColor( 0x0d0c10 ).setGlow( 0 );
+			lensB.addGeometry( bezel, new THREE.Matrix4().makeTranslation( x, - h - 0.002, pu.d / 2 ) );
+			const lens = new THREE.CircleGeometry( 0.5, 20 ).scale( pu.w * 0.72, pu.d * 0.62, 1 ).rotateX( Math.PI / 2 );
+			lensB.setColor( 0xffeccc ).setGlow( 4 );
+			lensB.addGeometry( lens, new THREE.Matrix4().makeTranslation( x, - h - 0.004, pu.d / 2 ) );
 			lensB.setColor( 0x0d0c10 ).setGlow( 0 );
 
 		}
@@ -639,6 +650,10 @@ export class CarModel {
 
 		this.glass.visible = ! on;
 		if ( this.outline ) this.outline.visible = ! on;
+		// from the driver's seat the raised pods read as floating boxes over the
+		// hood line; the headlight beams still come from the car's spotlights
+		this.popups.visible = ! on;
+		this.doorMirrors.visible = ! on;
 
 	}
 

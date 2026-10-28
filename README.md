@@ -18,6 +18,11 @@ npm run build        # production build in dist/
 npm run preview      # serve dist/ on the LAN
 ```
 
+**Cloudflare Workers (static assets):** `wrangler.jsonc` points Wrangler at
+`dist/`. With build command `npm run build` and deploy command
+`npx wrangler deploy` it uploads the built site as-is (or run `npm run deploy`
+locally). The Workers URL is HTTPS, so WebXR works there on the Quest.
+
 **Meta Quest 3:** WebXR needs a secure context. Run `npm run dev:https`, open
 `https://<your-PC-LAN-IP>:5173` in the Quest Browser, accept the self-signed
 certificate, then choose **WebXR / VR Mode** on the title screen.

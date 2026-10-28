@@ -5,7 +5,7 @@ import basicSsl from '@vitejs/plugin-basic-ssl';
 // the dev server directly (WebXR requires a secure context).
 export default defineConfig( ( { mode } ) => ( {
 	base: './',
-	plugins: mode === 'https' ? [ basicSsl() ] : [],
+	plugins: [ ...( mode === 'https' ? [ basicSsl() ] : [] ) ], // a literal array keeps config tooling happy
 	server: { host: mode === 'https' ? true : 'localhost' },
 	build: {
 		target: 'es2022',

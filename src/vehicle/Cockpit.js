@@ -32,7 +32,7 @@ export class Cockpit {
 		// low bucket-seat eye: ~0.42 m behind the windshield header, ~0.28 m
 		// under the roof skin
 		this.fEye = spec.glass.windshield[ 1 ] + 0.42;
-		const eyeY = Math.max( 0.88, sec( spec.glass.windshield[ 1 ] ).yCenter - 0.29 );
+		const eyeY = Math.max( 0.92, sec( spec.glass.windshield[ 1 ] ).yCenter - 0.25 );
 		this.eyePos = new THREE.Vector3( - 0.36, eyeY, carModel.zOf( this.fEye ) );
 		this.eye = new THREE.Object3D();
 		this.eye.position.copy( this.eyePos );
@@ -84,11 +84,17 @@ export class Cockpit {
 		add( b, EDGE, box( 0.1, 0.02, 0.02 ), M( 0.5, faceY1 + 0.2, Z( dashF1 + 0.08 ) ) );
 
 		// gauge binnacle in front of the driver: visor hood + side cheeks
-		const binF = dashF1 - 0.08, binTop = cowlY + 0.115;
-		add( b, INTERIOR, box( 0.5, 0.035, 0.26 ), M( e.x, binTop, Z( binF + 0.02 ), 0.1 ) );
-		for ( const s of [ 1, - 1 ] ) add( b, INTERIOR, box( 0.035, 0.15, 0.24 ), M( e.x + s * 0.245, binTop - 0.075, Z( binF + 0.03 ) ) );
-		add( b, INTERIOR_DARK, box( 0.48, 0.16, 0.03 ), M( e.x, binTop - 0.09, Z( binF - 0.1 ) ) ); // back plate
-		add( b, EDGE, box( 0.5, 0.012, 0.012 ), M( e.x, binTop + 0.012, Z( binF + 0.15 ) ) );
+		// low, rounded hood: it barely clears the dash line, so the road ahead
+		// stays open and the dials are read through the top of the wheel
+		// The cluster sits proud of the dash face, framed by the top half of the
+		// wheel (~25° below the eye line); its hood stays below the far dash line
+		const binF = dashF1 + 0.05;
+		const faceY = e.y - ( this.fEye - binF ) * 0.47;
+		const binTop = faceY + 0.085;
+		const hood = new THREE.CylinderGeometry( 0.21, 0.21, 0.16, 20, 1, true, Math.PI / 2, Math.PI ).rotateX( Math.PI / 2 ).scale( 1, 0.42, 1 );
+		add( b, INTERIOR, hood, M( e.x, binTop - 0.088, Z( binF + 0.06 ) ) );
+		add( b, EDGE, new THREE.TorusGeometry( 0.21, 0.007, 4, 20, Math.PI ).scale( 1, 0.42, 1 ), M( e.x, binTop - 0.088, Z( binF + 0.14 ) ) ); // stitched rim
+		add( b, INTERIOR_DARK, box( 0.44, faceY - faceY1 + 0.07, 0.07 ), M( e.x, ( faceY + 0.07 + faceY1 ) / 2, Z( binF - 0.015 ) ) ); // pod body down to the knee panel
 
 		// round eyeball vent at the driver's right, rectangular vents on the passenger side
 		const ventPanel = ( x, y, w, h ) => {
@@ -194,7 +200,7 @@ export class Cockpit {
 
 		// ---- steering column ---------------------------------------------------
 		const colTilt = - 0.38;
-		this.wheelCenter = new THREE.Vector3( e.x, e.y - 0.275, Z( this.fEye - 0.53 ) );
+		this.wheelCenter = new THREE.Vector3( e.x, e.y - 0.33, Z( this.fEye - 0.5 ) );
 		add( b, INTERIOR_DARK, box( 0.12, 0.11, 0.34 ), M( e.x, this.wheelCenter.y - 0.05, this.wheelCenter.z + 0.2, colTilt ) );
 		add( b, TRIM, box( 0.05, 0.012, 0.1 ), M( e.x + 0.09, this.wheelCenter.y - 0.02, this.wheelCenter.z + 0.12, colTilt ) ); // indicator stalk
 		add( b, TRIM, box( 0.05, 0.012, 0.1 ), M( e.x - 0.09, this.wheelCenter.y - 0.02, this.wheelCenter.z + 0.12, colTilt ) ); // wiper stalk
@@ -267,11 +273,11 @@ export class Cockpit {
 		this.gaugeTex = new THREE.CanvasTexture( this.gaugeCanvas );
 		this.gaugeTex.colorSpace = THREE.NoColorSpace;
 		this.drawGaugeFace();
-		const W = 0.42, H = W * 200 / 512;
+		const W = 0.34, H = W * 200 / 512;
 		const face = new THREE.Mesh( new THREE.PlaneGeometry( W, H ), emissiveMaterial( 0xffffff, 1.0 ) );
 		face.material.map = this.gaugeTex;
 		// recessed under the binnacle visor, tilted back toward the eye
-		face.position.set( e.x, binTop - 0.075, this.model.zOf( binF - 0.06 ) );
+		face.position.set( e.x, binTop - 0.085, this.model.zOf( binF + 0.025 ) );
 		face.rotation.set( 0.3, Math.PI, 0, 'YXZ' );
 		this.group.add( face );
 		this.gaugeFace = face;
@@ -595,8 +601,8 @@ export class Cockpit {
 			const g = new THREE.Group();
 			g.position.copy( pos );
 			g.rotation.set( rotX, Math.PI + rotY, 0, 'YXZ' ); // face the driver (-z)
-			const frame = new THREE.Mesh( new THREE.BoxGeometry( w + 0.024, h + 0.024, 0.025 ), frameMat );
-			frame.position.z = - 0.014;
+			const frame = new THREE.Mesh( new THREE.CapsuleGeometry( ( h + 0.016 ) / 2, w - h + 0.004, 4, 12 ).rotateZ( Math.PI / 2 ).scale( 1, 1, 0.22 ), frameMat );
+			frame.position.z = - 0.008;
 			const glassM = new THREE.Mesh( uvRemap( new THREE.PlaneGeometry( w, h ), u0, u1 ), mat );
 			g.add( frame, glassM );
 			this.group.add( g );
