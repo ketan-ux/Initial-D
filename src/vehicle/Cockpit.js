@@ -605,10 +605,20 @@ export class Cockpit {
 			const g = new THREE.Group();
 			g.position.copy( pos );
 			g.rotation.set( rotX, Math.PI + rotY, 0, 'YXZ' ); // face the driver (-z)
-			const frame = new THREE.Mesh( new THREE.CapsuleGeometry( ( h + 0.016 ) / 2, w - h + 0.004, 4, 12 ).rotateZ( Math.PI / 2 ).scale( 1, 1, 0.22 ), frameMat );
-			frame.position.z = - 0.016; // fully behind the glass (it used to poke through as an oval)
-			const glassM = new THREE.Mesh( uvRemap( new THREE.PlaneGeometry( w, h ), u0, u1 ), mat );
-			glassM.position.z = 0.002;
+			// rounded housing (back shell) + a raised bezel lip; the glass is the
+			// same rounded shape, set into the lip so nothing pokes out or floats
+			const r = 0.012, bez = 0.009;
+			const shell = new THREE.ExtrudeGeometry( stadium( w + bez * 2, h + bez * 2, r + bez ), { depth: 0.02, bevelEnabled: true, bevelThickness: 0.004, bevelSize: 0.003, bevelSegments: 2, curveSegments: 6 } );
+			shell.translate( 0, 0, - 0.024 );
+			const lipShape = stadium( w + bez * 2, h + bez * 2, r + bez );
+			lipShape.holes.push( stadium( w + 0.002, h + 0.002, r + 0.001 ) );
+			const lip = new THREE.ExtrudeGeometry( lipShape, { depth: 0.006, bevelEnabled: false, curveSegments: 6 } );
+			const frame = new THREE.Mesh( mergeTwo( shell, lip ), frameMat );
+			const glassGeo = new THREE.ShapeGeometry( stadium( w, h, r ), 6 );
+			const guv = glassGeo.attributes.uv, gp = glassGeo.attributes.position;
+			for ( let i = 0; i < guv.count; i ++ ) guv.setXY( i, gp.getX( i ) / w + 0.5, gp.getY( i ) / h + 0.5 );
+			const glassM = new THREE.Mesh( uvRemap( glassGeo, u0, u1 ), mat );
+			glassM.position.z = 0.003; // recessed inside the 6 mm lip
 			g.add( frame, glassM );
 			this.group.add( g );
 			return g;
@@ -620,9 +630,10 @@ export class Cockpit {
 		const rz = this.model.zOf( roofF + 0.08 );
 		this.rearMirror = mk( 0.21, 0.058, 0.32, 0.68, new THREE.Vector3( 0, roofY - 0.09, rz ), - 0.12, 0.04 ); // nearly square-on, a slight angle toward the driver
 		const mb = new GeoBuilder( { color: false } );
-		mb.addGeometry( new THREE.BoxGeometry( 0.06, 0.02, 0.07 ), new THREE.Matrix4().makeTranslation( 0, roofY - 0.012, rz + 0.01 ) ); // mount
-		mb.addGeometry( new THREE.CylinderGeometry( 0.011, 0.011, 0.055, 8 ), new THREE.Matrix4().makeTranslation( 0, roofY - 0.045, rz ) ); // stem
-		mb.addGeometry( new THREE.SphereGeometry( 0.016, 8, 6 ), new THREE.Matrix4().makeTranslation( 0, roofY - 0.068, rz ) ); // ball joint
+		mb.addGeometry( new THREE.BoxGeometry( 0.06, 0.02, 0.07 ), new THREE.Matrix4().makeTranslation( 0, roofY - 0.012, rz + 0.03 ) ); // mount
+		// stem drops behind the housing and meets its back at a ball joint
+		mb.addGeometry( new THREE.CylinderGeometry( 0.011, 0.011, 0.05, 8 ), new THREE.Matrix4().makeTranslation( 0, roofY - 0.035, rz + 0.03 ) ); // stem
+		mb.addGeometry( new THREE.SphereGeometry( 0.016, 8, 6 ), new THREE.Matrix4().makeTranslation( 0, roofY - 0.064, rz + 0.026 ) ); // ball joint
 		const fm = this.spec.glass.side[ 0 ] + 0.12;
 		const sm = this.model.sections.reduce( ( a, s ) => ( Math.abs( s.f - fm ) < Math.abs( a.f - fm ) ? s : a ), this.model.sections[ 0 ] );
 		this.leftMirror = mk( 0.13, 0.085, 0.72, 1.0, new THREE.Vector3( sm.w1 + 0.1, sm.ybelt + 0.1, this.model.zOf( fm ) - 0.02 ), - 0.55 );
@@ -732,3 +743,25 @@ export class Cockpit {
 }
 
 const _up = new THREE.Vector3( 0, 1, 0 );
+
+// Rounded-rectangle outline centred on the origin.
+function stadium( w, h, r ) {
+
+	const x = w / 2, y = h / 2, sh = new THREE.Shape();
+	r = Math.min( r, x, y );
+	sh.moveTo( - x + r, - y );
+	sh.lineTo( x - r, - y ); sh.quadraticCurveTo( x, - y, x, - y + r );
+	sh.lineTo( x, y - r ); sh.quadraticCurveTo( x, y, x - r, y );
+	sh.lineTo( - x + r, y ); sh.quadraticCurveTo( - x, y, - x, y - r );
+	sh.lineTo( - x, - y + r ); sh.quadraticCurveTo( - x, - y, - x + r, - y );
+	return sh;
+
+}
+
+function mergeTwo( a, b ) {
+
+	const g = new GeoBuilder( { color: false } );
+	g.addGeometry( a, null ); g.addGeometry( b, null );
+	return g.build();
+
+}
