@@ -16,6 +16,8 @@ export class Radio {
 		this.queue = [];
 		this.playing = null;
 		this.cooldowns = new Map();
+		this.lastTake = new Map(); // id -> index of the take played last
+		this.chatterUntil = 0; // spacing between low-priority calls
 		this.output = null; // optional PannerNode (VR: walkie-talkie on the passenger seat)
 		this.enabled = true;
 
@@ -41,7 +43,7 @@ export class Radio {
 	async preload() {
 
 		if ( ! this.audio.ready ) return;
-		const files = [ ...new Set( Object.values( LINES ).map( ( l ) => l.file ).filter( Boolean ) ) ];
+		const files = [ ...new Set( Object.values( LINES ).flatMap( ( l ) => [ l.file, ...( l.alt || [] ).map( ( v ) => v.file ) ] ).filter( Boolean ) ) ];
 		await Promise.all( files.map( ( f ) => this._load( f ) ) );
 
 	}
@@ -70,11 +72,15 @@ export class Radio {
 	// Request a line. Lower-priority chatter is dropped when busy.
 	say( id, { delay = 0, force = false } = {} ) {
 
-		const line = LINES[ id ];
-		if ( ! line || ! this.enabled ) return;
+		const base = LINES[ id ];
+		if ( ! base || ! this.enabled ) return;
 		const now = performance.now();
 		if ( ! force && ( this.cooldowns.get( id ) || 0 ) > now ) return;
+		// low-priority colour commentary also waits for a gap in the chatter
+		if ( ! force && base.priority <= 1 && this.chatterUntil > now ) return;
 		this.cooldowns.set( id, now + 25000 );
+		if ( base.priority <= 1 ) this.chatterUntil = now + 9000;
+		const line = this._pickTake( id, base );
 		const item = { id, line, at: now + delay * 1000 };
 		if ( this.playing || this.queue.length ) {
 
@@ -84,6 +90,29 @@ export class Radio {
 			if ( this.queue.length > 3 ) this.queue.length = 3;
 
 		} else this.queue.push( item );
+
+	}
+
+	// One of the line's takes, never the same one twice in a row.
+	_pickTake( id, base ) {
+
+		const takes = [ { file: base.file, text: base.text }, ...( base.alt || [] ) ];
+		let k = 0;
+		if ( takes.length > 1 ) {
+
+			const last = this.lastTake.get( id ) ?? - 1;
+			if ( last < 0 ) k = Math.floor( Math.random() * takes.length );
+			else {
+
+				k = Math.floor( Math.random() * ( takes.length - 1 ) );
+				if ( k >= last ) k ++;
+
+			}
+
+		}
+
+		this.lastTake.set( id, k );
+		return { ...base, file: takes[ k ].file, text: takes[ k ].text, speaker: takes[ k ].speaker ?? base.speaker };
 
 	}
 

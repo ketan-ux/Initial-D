@@ -70,7 +70,7 @@ export class Terrain {
 		out.lerp( PAL.snow, smoothstep( 640, 760, h ) * ( 1 - smoothstep( 0.8, 1.3, slope ) ) );
 		// petal carpet along the verge
 		const carpet = ( 1 - smoothstep( W + 1, W + 9, dRoad ) ) * ( 1 - smoothstep( 0.6, 1.0, slope ) );
-		out.lerp( PAL.petals, carpet * 0.55 );
+		out.lerp( PAL.petals, carpet * 0.16 ); // a faint blush only; real petals are decals
 		return out;
 
 	}

@@ -42,11 +42,16 @@ function petalShape( ctx, x, y, r, rot ) {
 	ctx.save();
 	ctx.translate( x, y );
 	ctx.rotate( rot );
+	// notched sakura petal with a pale centre crease
 	ctx.beginPath();
-	ctx.moveTo( 0, - r );
-	ctx.quadraticCurveTo( r * 0.9, - r * 0.4, 0, r );
-	ctx.quadraticCurveTo( - r * 0.9, - r * 0.4, 0, - r );
+	ctx.moveTo( 0, r );
+	ctx.bezierCurveTo( - r * 1.1, r * 0.3, - r * 0.7, - r * 0.9, - r * 0.3, - r );
+	ctx.lineTo( 0, - r * 0.7 );
+	ctx.lineTo( r * 0.3, - r );
+	ctx.bezierCurveTo( r * 0.7, - r * 0.9, r * 1.1, r * 0.3, 0, r );
 	ctx.fill();
+	ctx.fillStyle = 'rgba(255,255,255,0.35)';
+	ctx.fillRect( - 0.5, - r * 0.5, 1, r * 1.2 );
 	ctx.restore();
 
 }

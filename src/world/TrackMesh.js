@@ -89,6 +89,16 @@ export function buildRoad( track, sides, material, opts = {} ) {
 	const stripeGeo = new THREE.BoxGeometry( 0.2, 0.86, 0.44 );
 	const wireGeo = new THREE.BoxGeometry( 0.035, 0.035, 1 );
 	const POLE_EVERY = 20; // samples (~40 m)
+	// fallen sakura petals: real notched petal outlines (not blobs), merged into
+	// the road chunks so they cost no extra draw calls and cull with the road
+	const petalShape = new THREE.Shape( [
+		[ 0, 0.4 ], [ 0.17, 0.5 ], [ 0.3, 0.24 ], [ 0.22, - 0.16 ], [ 0, - 0.5 ], [ - 0.22, - 0.16 ], [ - 0.3, 0.24 ], [ - 0.17, 0.5 ]
+	].map( ( [ x, y ] ) => new THREE.Vector2( x, y ) ) );
+	const petalGeo = new THREE.ShapeGeometry( petalShape ).rotateX( - Math.PI / 2 );
+	const PETAL_COLS = [ 0xffc6dc, 0xffb3d1, 0xfff0f6, 0xf7a1c8, 0xffd9e8 ];
+	const petalDensity = opts.petalDensity ?? 1;
+	let petalSeed = 7;
+	const prand = () => ( ( petalSeed = ( petalSeed * 16807 ) % 2147483647 ) / 2147483647 );
 	// utility-pole crossarm tips (world space) for sample i, or null if no pole
 	const poleSide = ( i ) => {
 
@@ -208,7 +218,18 @@ export function buildRoad( track, sides, material, opts = {} ) {
 
 				} else {
 
-					const prof = [ [ W, 0, 0.02 ], [ W + 0.4, - 0.08, 0.04 ], [ W + 1.3, - 3.4, 0.08 ], [ W + 2.4, - 7.5, 0.1 ] ];
+					// embankment skirt reaching all the way down to the land, so a
+					// switchback stacked above another reads as a retaining wall
+					let depth = 7.5;
+					if ( opts.field ) {
+
+						const gd = side * ( W + 2.4 );
+						const ground = opts.field.height( cx + lx * gd, cz + lz * gd );
+						depth = Math.min( 70, Math.max( 7.5, y0 - ground + 1.5 ) );
+
+					}
+
+					const prof = [ [ W, 0, 0.02 ], [ W + 0.4, - 0.08, 0.04 ], [ W + 1.1, - 3.0, 0.08 ], [ W + 1.6 + depth * 0.1, - depth, depth > 9 ? 0.6 : 0.1 ] ];
 					for ( const [ d, h, t ] of prof ) {
 
 						const dd = side * d;
@@ -330,6 +351,29 @@ export function buildRoad( track, sides, material, opts = {} ) {
 			}
 
 		}
+
+		// petals drift into the gutters and along the verge, a few on the asphalt
+		for ( let i = c0; i < c1; i ++ ) {
+
+			const n = Math.round( ( 5 + prand() * 3 ) * petalDensity );
+			for ( let k = 0; k < n; k ++ ) {
+
+				const side = prand() < 0.5 ? 1 : - 1;
+				const onRoad = prand() < 0.18;
+				const lat = onRoad ? ( prand() * 2 - 1 ) * hw : side * ( hw - 0.3 + prand() * ( W - hw + 0.2 ) );
+				const size = 0.07 + prand() * 0.06;
+				const m = place( petalGeo, i, lat, 0.018 + prand() * 0.006, prand() * Math.PI * 2, tmpS.set( size, 1, size ) );
+				m.elements[ 12 ] += track.fx[ i ] * ( prand() - 0.5 ) * 2; // spread along the 2 m sample
+				m.elements[ 14 ] += track.fz[ i ] * ( prand() - 0.5 ) * 2;
+				b.setColor( PETAL_COLS[ ( prand() * PETAL_COLS.length ) | 0 ] ).setGlow( 0.1 );
+				b.addGeometry( petalGeo, m, { uv: [ ACCENT_U, 0.5 ] } );
+
+			}
+
+		}
+
+		tmpS.set( 1, 1, 1 );
+		b.setGlow( 0 );
 
 		// utility poles with sagging power lines (the classic touge silhouette)
 		for ( let i = c0; i < c1; i ++ ) {

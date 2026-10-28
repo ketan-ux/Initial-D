@@ -16,6 +16,10 @@ import { mulberry32 } from '../core/math.js';
 export const ROOM = { w: 8, d: 8, h: 4.4, doorW: 5, doorH: 3.45 };
 
 const M4 = new THREE.Matrix4();
+// notched sakura petal (flat, unit size) for the petal carpet outside the door
+const PETAL_GEO = new THREE.ShapeGeometry( new THREE.Shape( [
+	[ 0, 0.4 ], [ 0.17, 0.5 ], [ 0.3, 0.24 ], [ 0.22, - 0.16 ], [ 0, - 0.5 ], [ - 0.22, - 0.16 ], [ - 0.3, 0.24 ], [ - 0.17, 0.5 ]
+].map( ( [ x, y ] ) => new THREE.Vector2( x, y ) ) ) ).rotateX( - Math.PI / 2 );
 const at = ( x, y, z, ry = 0, rx = 0, rz = 0 ) => M4.clone().compose(
 	new THREE.Vector3( x, y, z ), new THREE.Quaternion().setFromEuler( new THREE.Euler( rx, ry, rz ) ), new THREE.Vector3( 1, 1, 1 ) );
 
@@ -214,7 +218,8 @@ export function buildGarageSet( quality ) {
 
 		const px = ( rng() - 0.5 ) * 22, pz = - D - 1 - rng() * 14;
 		b.setColor( [ 0xf2b3cf, 0xffd3e6, 0xf7a1c8 ][ ( rng() * 3 ) | 0 ] );
-		b.addGeometry( new THREE.CircleGeometry( 0.06 + rng() * 0.08, 5 ).rotateX( - Math.PI / 2 ), at( px, 0.012 + rng() * 0.004, pz ) );
+		const sz = 0.12 + rng() * 0.1;
+		b.addGeometry( PETAL_GEO, at( px, 0.012 + rng() * 0.004, pz, rng() * 6.28 ).multiply( new THREE.Matrix4().makeScale( sz, 1, sz ) ) );
 
 	}
 

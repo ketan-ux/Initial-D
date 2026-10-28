@@ -80,8 +80,11 @@ export class TerrainField {
 		// hug the road corridor
 		if ( dMin < Infinity ) {
 
-			if ( lower > upper ) h = ( lower + upper ) * 0.5;
-			else h = clamp( h, lower, upper );
+			// Where switchbacks stack, the upper road's embankment (lower bound)
+			// can exceed the lower road's cutting (upper bound). Clearance wins:
+			// the land never rises over any road; the upper road gets a
+			// retaining wall down to it instead (see TrackMesh).
+			h = lower > upper ? upper : clamp( h, lower, upper );
 
 		}
 

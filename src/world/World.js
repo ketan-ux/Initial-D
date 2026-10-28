@@ -36,7 +36,7 @@ export class World {
 		this.roadMaterial = toonMaterial( { map: this.atlas, vertexColors: true, glowAttr: 'glow', rim: 0.08, side: THREE.DoubleSide } );
 		this.terrainMaterial = toonMaterial( { vertexColors: true, sway: true, rim: 0.3 } );
 		this.sides = classifySides( this.track, this.field );
-		const { group: road, lamps } = buildRoad( this.track, this.sides, this.roadMaterial );
+		const { group: road, lamps } = buildRoad( this.track, this.sides, this.roadMaterial, { field: this.field, petalDensity: Math.min( 1, q.petals / 2400 ) } );
 		this.road = road;
 		this.lamps = lamps;
 		this.root.add( road );
