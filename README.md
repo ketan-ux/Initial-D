@@ -63,6 +63,7 @@ field (for example `?q.mirrors=0&q.petals=500`).
 | Pop-up headlights | H | D-pad ↑ | Press the dash switch | — |
 | HUD mode | U | View | Press the dash switch | — |
 | Pause | Esc / P | Start | Y | — |
+| Fullscreen | F or the ⛶ button | — | — | ⛶ button (top centre) |
 
 Menus work with the mouse, the keyboard (arrows and Enter), a gamepad
 (d-pad or stick, A to select, B to go back), touch, and VR laser pointers.

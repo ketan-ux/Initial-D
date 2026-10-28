@@ -37,6 +37,54 @@ export class Menus {
 		this._help();
 		this._staging();
 		this._confirm();
+		this._fullscreen();
+
+	}
+
+	// Fullscreen toggle (top centre, every screen). Also on the F key. On phones
+	// it locks to landscape when the browser allows. Hidden where the
+	// Fullscreen API is missing (e.g. iPhone Safari - use Add to Home Screen).
+	_fullscreen() {
+
+		const de = document.documentElement;
+		const req = de.requestFullscreen || de.webkitRequestFullscreen;
+		if ( ! req ) return;
+		const el = h( `<button class="fs-btn" aria-label="Toggle fullscreen" title="Fullscreen (F)">⛶</button>` );
+		this.root.appendChild( el );
+		const isFs = () => !! ( document.fullscreenElement || document.webkitFullscreenElement );
+		const toggle = async () => {
+
+			try {
+
+				if ( isFs() ) await ( document.exitFullscreen || document.webkitExitFullscreen ).call( document );
+				else {
+
+					await req.call( de, { navigationUI: 'hide' } );
+					await screen.orientation?.lock?.( 'landscape' ).catch( () => {} );
+
+				}
+
+			} catch ( e ) {
+
+				console.warn( 'fullscreen unavailable', e );
+
+			}
+
+		};
+
+		el.addEventListener( 'click', ( e ) => {
+
+			e.stopPropagation(); toggle(); el.blur();
+
+		} );
+		window.addEventListener( 'keydown', ( e ) => {
+
+			if ( e.code === 'KeyF' && ! e.repeat && e.target.tagName !== 'INPUT' ) toggle();
+
+		} );
+		const sync = () => el.classList.toggle( 'on', isFs() );
+		document.addEventListener( 'fullscreenchange', sync );
+		document.addEventListener( 'webkitfullscreenchange', sync );
 
 	}
 
@@ -518,7 +566,7 @@ export class Menus {
 					<tr><td>A D / ← →</td><td>Steer</td></tr><tr><td>Space</td><td>Handbrake</td></tr>
 					<tr><td>E / Q</td><td>Shift up / down (manual)</td></tr><tr><td>C</td><td>Cockpit ⇄ chase camera</td></tr>
 					<tr><td>H</td><td>Pop-up headlights</td></tr><tr><td>U</td><td>Cycle HUD mode</td></tr>
-					<tr><td>L</td><td>Look back</td></tr><tr><td>R</td><td>Reset car to road</td></tr><tr><td>Esc / P</td><td>Pause</td></tr>
+					<tr><td>L</td><td>Look back</td></tr><tr><td>F</td><td>Fullscreen</td></tr><tr><td>R</td><td>Reset car to road</td></tr><tr><td>Esc / P</td><td>Pause</td></tr>
 				</table></section>
 				<section><h3>Gamepad</h3><table>
 					<tr><td>Left stick</td><td>Steer</td></tr><tr><td>RT / LT</td><td>Throttle / brake</td></tr>
