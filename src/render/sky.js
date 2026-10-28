@@ -56,9 +56,11 @@ export function createSky() {
 
 	// moon with stepped halo
 	const md = max( dot( dir, uMoonDir ), 0 );
-	const disc = smoothstep( float( 0.99935 ), float( 0.99955 ), md );
-	const crater = smoothstep( float( 0.9998 ), float( 0.99995 ), dot( dir, uMoonDir.add( vec3( 0.006, 0.004, 0 ) ).normalize() ) ).mul( 0.12 );
-	const halo = pow( md, float( 900 ) ).mul( 0.35 ).add( pow( md, float( 60 ) ).mul( 0.12 ) );
+	// big anime moon (~3° radius) with two soft crater blotches
+	const disc = smoothstep( float( 0.99858 ), float( 0.99878 ), md );
+	const crater = smoothstep( float( 0.99955 ), float( 0.99985 ), dot( dir, uMoonDir.add( vec3( 0.012, 0.008, 0 ) ).normalize() ) ).mul( 0.1 )
+		.add( smoothstep( float( 0.99975 ), float( 0.99992 ), dot( dir, uMoonDir.add( vec3( - 0.016, - 0.01, 0.004 ) ).normalize() ) ).mul( 0.08 ) );
+	const halo = pow( md, float( 420 ) ).mul( 0.38 ).add( pow( md, float( 40 ) ).mul( 0.14 ) );
 	col = mix( col, vec3( 1.0, 0.97, 0.88 ).sub( crater ), disc ).add( vec3( 0.75, 0.7, 1.0 ).mul( halo ) );
 
 	// distant mountain silhouettes (far layer, then near layer)

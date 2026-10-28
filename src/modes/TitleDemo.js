@@ -152,9 +152,9 @@ export class TitleDemo {
 		if ( this.shot === 'front' ) {
 
 			// low tracking shot from ahead, cars drifting toward the lens
-			const p = t.pointAt( pf.s + 15, pf.lateral + outside * 2.2 );
-			want.set( p.x, p.y + 0.85, p.z );
-			fov = 38; lerpK = 3;
+			const p = t.pointAt( pf.s + 24, pf.lateral + outside * 2.4 );
+			want.set( p.x, p.y + 1.25, p.z );
+			fov = 36; lerpK = 3;
 
 		} else if ( this.shot === 'rear' ) {
 

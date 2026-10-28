@@ -60,8 +60,10 @@ export class Captions {
 		}
 
 		this.el.className = 'captions show size-' + settings.captionSize;
-		this.el.innerHTML = `<span class="cc-tag">[CC]</span> <span class="cc-who" style="color:${c.color}">${c.speaker}:</span> <span class="cc-text"></span>`;
-		this.el.querySelector( '.cc-text' ).textContent = c.text;
+		// manga radio caption: RADIO: "line" — the speaker tag stays for clarity
+		this.el.innerHTML = `<span class="cc-tag" title="Closed caption">[CC]</span> <span class="cc-who" style="color:${c.color}">RADIO</span><span class="cc-sp"></span>: <span class="cc-text"></span>`;
+		this.el.querySelector( '.cc-sp' ).textContent = ` · ${c.speaker}`;
+		this.el.querySelector( '.cc-text' ).textContent = `“${c.text}”`;
 		this.timer = c.duration;
 		this._draw( c );
 
@@ -77,11 +79,11 @@ export class Captions {
 		ctx.font = '700 30px Arial';
 		ctx.fillStyle = c.color;
 		ctx.textBaseline = 'top';
-		ctx.fillText( `[CC] ${c.speaker}`, 26, 14 );
+		ctx.fillText( `[CC] RADIO · ${c.speaker}`, 26, 14 );
 		ctx.fillStyle = '#ffffff';
 		ctx.font = '600 34px Arial';
 		// wrap text into two lines max
-		const words = c.text.split( ' ' );
+		const words = `“${c.text}”`.split( ' ' );
 		let line = '', y = 56;
 		for ( const w of words ) {
 

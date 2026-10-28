@@ -251,7 +251,8 @@ kbd { display: inline-block; background: var(--paper); color: var(--ink); border
 .captions.show { opacity: 1; }
 .captions.size-small { font-size: 15px; } .captions.size-medium { font-size: 19px; } .captions.size-large { font-size: 25px; }
 .cc-tag { display: inline-block; font-size: 0.6em; vertical-align: 0.2em; background: var(--paper); color: var(--ink); padding: 0 4px; margin-right: 6px; text-shadow: none; border: 2px solid var(--ink); }
-.cc-who { font-family: var(--display); font-style: italic; font-weight: 900; }
+.cc-who { font-family: var(--display); font-style: italic; font-weight: 900; letter-spacing: 0.04em; }
+.cc-sp { font-size: 0.7em; font-weight: 700; opacity: 0.8; text-transform: capitalize; }
 
 /* ---------- touch controls ---------- */
 .touch-controls { position: absolute; inset: 0; pointer-events: none; }

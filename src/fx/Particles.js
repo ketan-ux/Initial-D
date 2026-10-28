@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu';
 import {
 	attribute, uniform, vec2, vec3, vec4, float, step, smoothstep, mix, texture, uv, positionLocal,
-	cameraViewMatrix, cameraProjectionMatrix, normalize, pow, clamp as tclamp, sin, cos
+	cameraViewMatrix, cameraProjectionMatrix, normalize, pow, clamp as tclamp, sin, cos, varying
 } from 'three/tsl';
 import { uTime, uAmbient } from '../render/toon.js';
 import { createSmokeTexture, createSparkTexture, createGlowTexture } from '../render/textures.js';
@@ -44,7 +44,7 @@ class BillboardPool {
 		const pos = p0.xyz.add( p1.xyz.mul( drag ) ).add( vec3( 0, gravity, 0 ).mul( age ).mul( age ).mul( 0.5 ) );
 		const size = mix( p2.x, p2.y, kind === 'smoke' ? pow( t, float( 0.6 ) ) : t ).mul( alive );
 		const corner = positionLocal.xy;
-		let clip;
+		let clip, nearFade = float( 1 );
 		if ( kind === 'spark' ) {
 
 			// stretch along screen-space velocity
@@ -63,6 +63,9 @@ class BillboardPool {
 			const rc = vec2( corner.x.mul( c ).sub( corner.y.mul( s ) ), corner.x.mul( s ).add( corner.y.mul( c ) ) );
 			const v = cameraViewMatrix.mul( vec4( pos, 1 ) ).add( vec4( rc.mul( size ), 0, 0 ) );
 			clip = cameraProjectionMatrix.mul( v );
+			// puffs dissolve as they reach the lens, so a chase or cockpit camera
+			// driving through its own smoke never gets a screen-filling grey card
+			nearFade = varying( smoothstep( float( 1.2 ), float( 5.5 ), v.z.negate() ) );
 
 		}
 
@@ -76,8 +79,8 @@ class BillboardPool {
 
 			// toon smoke: painted texture tinted by twilight ambient, stepped fade
 			const fade = float( 1 ).sub( smoothstep( float( 0.45 ), float( 1.0 ), t ) ).mul( smoothstep( float( 0 ), float( 0.06 ), t ) );
-			const tint = mix( vec3( 1.0, 0.96, 1.0 ), vec3( uAmbient ).mul( 1.8 ), t.mul( 0.6 ) );
-			mat.colorNode = vec4( tex.rgb.mul( tint ).mul( p2.w ), tex.a.mul( fade ).mul( 0.85 ) );
+			const tint = mix( vec3( 1.0, 0.98, 1.0 ), vec3( uAmbient ).mul( 2.0 ).add( 0.25 ), t.mul( 0.5 ) );
+			mat.colorNode = vec4( tex.rgb.mul( tint ).mul( p2.w ), tex.a.mul( fade ).mul( nearFade ).mul( 0.92 ) );
 
 		} else {
 
@@ -215,7 +218,7 @@ export class FX {
 
 		const p = car.physics, tel = car.telemetry, m = car.model;
 		const intensity = Math.max( tel.drift, tel.wheelspin * 0.8, p.controls.handbrake > 0.5 && p.speed > 6 ? 0.6 : 0 );
-		let acc = ( this._smokeAcc.get( car ) || 0 ) + dt * intensity * ( this.quality.smokeParticles / 6 );
+		let acc = ( this._smokeAcc.get( car ) || 0 ) + dt * intensity * ( this.quality.smokeParticles / 7 );
 		const root = car.root;
 		while ( acc > 1 ) {
 
@@ -228,8 +231,8 @@ export class FX {
 				const spread = 0.8 + Math.random() * 1.2;
 				this.smoke.emit(
 					_v.x + ( Math.random() - 0.5 ) * 0.3, _v.y, _v.z + ( Math.random() - 0.5 ) * 0.3,
-					p.vx * 0.25 + ( Math.random() - 0.5 ) * spread, 0.9 + Math.random() * 0.8, p.vz * 0.25 + ( Math.random() - 0.5 ) * spread,
-					1.8 + Math.random() * 1.2, 0.6, 3.2 + intensity * 2.5, 0.85 + Math.random() * 0.15
+					p.vx * 0.22 + ( Math.random() - 0.5 ) * spread, 0.7 + Math.random() * 0.9, p.vz * 0.22 + ( Math.random() - 0.5 ) * spread,
+					2.4 + Math.random() * 1.6, 0.7, 3.4 + intensity * 2.8, 0.95 + Math.random() * 0.1
 				);
 
 			}
@@ -241,14 +244,14 @@ export class FX {
 		// sparks while scraping a guardrail / wall
 		if ( p.scrape > 0.05 || p.wallImpact > 1.5 ) {
 
-			const n = Math.ceil( ( p.scrape * 3 + p.wallImpact * 0.6 ) * dt * 60 );
+			const n = Math.ceil( ( p.scrape * 5 + p.wallImpact * 0.9 ) * dt * 60 );
 			const side = p.wallContact || 1;
 			for ( let k = 0; k < n; k ++ ) {
 
 				_v.set( side * car.spec.width * 0.5, 0.4 + Math.random() * 0.3, ( Math.random() - 0.5 ) * car.spec.length * 0.8 );
 				root.localToWorld( _v );
-				_w.set( - p.vx * 0.15 + ( Math.random() - 0.5 ) * 4, 1.5 + Math.random() * 3, - p.vz * 0.15 + ( Math.random() - 0.5 ) * 4 );
-				this.sparks.emit( _v.x, _v.y, _v.z, _w.x, _w.y, _w.z, 0.35 + Math.random() * 0.35, 0.05, 0.02, 2.4 );
+				_w.set( - p.vx * 0.15 + ( Math.random() - 0.5 ) * 5, 1.5 + Math.random() * 4, - p.vz * 0.15 + ( Math.random() - 0.5 ) * 5 );
+				this.sparks.emit( _v.x, _v.y, _v.z, _w.x, _w.y, _w.z, 0.4 + Math.random() * 0.5, 0.07, 0.025, 3.2 );
 
 			}
 

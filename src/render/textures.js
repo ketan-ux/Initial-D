@@ -106,12 +106,14 @@ export function createRoadAtlas() {
 
 	}
 
-	// painted lines: solid white edges, dashed white centre (5 m on / 5 m off)
+	// painted lines: solid white edges, solid yellow centre (Japanese
+	// no-overtaking line, as on every mountain pass)
 	const ppm = H / ATLAS.tileLength;
 	ctx.fillStyle = '#e9e6ef';
 	ctx.fillRect( aw * 0.025, 0, aw * 0.018, H );
 	ctx.fillRect( aw * ( 1 - 0.043 ), 0, aw * 0.018, H );
-	for ( let m = 0; m < ATLAS.tileLength; m += 10 ) ctx.fillRect( aw * 0.5 - aw * 0.009, m * ppm, aw * 0.018, 5 * ppm );
+	ctx.fillStyle = '#f5b82a';
+	ctx.fillRect( aw * 0.5 - aw * 0.012, 0, aw * 0.024, H );
 	// wear on the paint
 	speckle( ctx, 0, 0, aw, H, 1400, [ '#3a3a48', '#46465a' ], rng, [ 1, 3 ] );
 	// fallen sakura petals collect toward the edges

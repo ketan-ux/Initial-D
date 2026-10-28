@@ -119,7 +119,7 @@ export class Car {
 		} );
 
 		const head = m.uniforms.head.value;
-		for ( const s of this.spots ) s.intensity = head * 42;
+		for ( const s of this.spots ) s.intensity = head * 30;
 		if ( this.pool ) this.pool.material.opacity = head * 0.55;
 
 	}

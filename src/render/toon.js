@@ -16,7 +16,7 @@ import { quality } from '../core/quality.js';
 // ---------------------------------------------------------------------------
 
 export const uTime = uniform( 0 ); // seconds; paused with the game
-export const uMoonDir = uniform( new THREE.Vector3( - 0.35, 0.55, - 0.75 ).normalize() );
+export const uMoonDir = uniform( new THREE.Vector3( - 0.35, 0.42, - 0.8 ).normalize() ); // ~25° up: often in frame
 export const uAmbient = uniform( new THREE.Color( 0x5a4f8a ) ); // twilight bounce light
 export const uRimColor = uniform( new THREE.Color( 0xffc8e8 ) ); // sakura-pink rim
 export const uWind = uniform( 1.0 );

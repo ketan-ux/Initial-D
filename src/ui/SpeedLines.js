@@ -38,7 +38,7 @@ export class SpeedLines {
 	update( dt ) {
 
 		this.intensity += ( this.target - this.intensity ) * Math.min( 1, dt * 5 );
-		this.canvas.style.opacity = this.intensity > 0.02 ? Math.min( 1, this.intensity * 1.3 ).toFixed( 2 ) : '0';
+		this.canvas.style.opacity = this.intensity > 0.02 ? Math.min( 1, this.intensity * 2 ).toFixed( 2 ) : '0';
 		if ( this.intensity <= 0.02 ) return;
 		this.timer -= dt;
 		if ( this.timer > 0 ) return;
@@ -59,7 +59,7 @@ export class SpeedLines {
 			const px = - sa, py = ca;
 			const x0 = cx + ca * r0, y0 = cy + sa * r0;
 			const x1 = cx + ca * R * 1.1, y1 = cy + sa * R * 1.1;
-			const alpha = ( 0.25 + Math.random() * 0.55 ) * this.intensity;
+			const alpha = ( 0.4 + Math.random() * 0.5 ) * Math.min( 1, 0.35 + this.intensity );
 			ctx.fillStyle = `rgba(${this.color},${alpha.toFixed( 3 )})`;
 			ctx.beginPath();
 			ctx.moveTo( x0, y0 );

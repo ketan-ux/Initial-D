@@ -186,15 +186,18 @@ export class PhoneGPS {
 				x: 0, y: 0, w: W, h: H, mode: this.mode === 0 ? 'follow' : 'overview', zoom: 180,
 				heading: d.heading, center: d.center, cars: d.cars, bg: '#14122a', line: '#ffffff', glow: 'rgba(80,170,255,0.4)'
 			} );
-			ctx.fillStyle = 'rgba(10,8,20,0.75)';
-			ctx.fillRect( 0, 0, W, 26 );
+			// status bar + next-section banner (portrait phone: two rows)
+			const narrow = W < 240;
+			ctx.fillStyle = 'rgba(10,8,20,0.8)';
+			ctx.fillRect( 0, 0, W, narrow ? 52 : 26 );
 			ctx.fillStyle = '#ffffff';
-			ctx.font = '600 18px Arial';
+			ctx.font = `600 ${narrow ? 20 : 18}px Arial`;
 			ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
 			const remain = Math.max( 0, ( d.finishS - d.s ) );
 			ctx.fillText( `${( remain / 1000 ).toFixed( 1 )} km`, 8, 13 );
-			ctx.textAlign = 'right';
-			ctx.fillText( d.section ?? '', W - 8, 13 );
+			ctx.textAlign = narrow ? 'left' : 'right';
+			ctx.fillStyle = narrow ? '#9fe8ff' : '#ffffff';
+			ctx.fillText( d.section ?? '', narrow ? 8 : W - 8, narrow ? 38 : 13 );
 
 		}
 

@@ -416,6 +416,7 @@ export class Game {
 
 					this.race.player.reset( skip, 1.5, 24 );
 					this.race.rival?.reset( skip + 8, - 1.5, 24 );
+					this.chase.init = false;
 
 				}
 
@@ -800,7 +801,7 @@ export class Game {
 			this.cockpit.eye.add( this.rig );
 			this.rig.position.set( 0, 0, 0 );
 			this.rig.rotation.set( 0, Math.PI * 0, 0 );
-			this.camera.fov = 66;
+			this.camera.fov = 70;
 
 		} else {
 
@@ -848,12 +849,14 @@ export class Game {
 		if ( this.cameraMode === 'cockpit' ) {
 
 			// look into corners with yaw rate / steering, and glance back on demand
-			const want = clamp( p.yawRate * 0.22 + p.steerAngle * 0.25, - 0.35, 0.35 ) + ( this.input.lookBack ? Math.PI : 0 );
+			// small bias toward the centre console (RHD: to the left) keeps the
+			// phone GPS and cup in frame; look into corners on top of that
+			const want = 0.07 + clamp( p.yawRate * 0.22 + p.steerAngle * 0.25, - 0.35, 0.35 ) + ( this.input.lookBack ? Math.PI : 0 );
 			this.lookYaw = damp( this.lookYaw, want, 6, dt );
 			this.rig.rotation.set( 0, Math.PI + this.lookYaw, 0 );
 			const sh = this._shakeAmount( dt );
 			this.camera.position.set( ( Math.random() - 0.5 ) * sh * 0.01, ( Math.random() - 0.5 ) * sh * 0.012, 0 );
-			const fov = 66 + clamp( p.speed / 50, 0, 1 ) * 6;
+			const fov = 70 + clamp( p.speed / 50, 0, 1 ) * 5;
 			if ( Math.abs( this.camera.fov - fov ) > 0.05 ) {
 
 				this.camera.fov = damp( this.camera.fov, fov, 3, dt ); this.camera.updateProjectionMatrix();
@@ -867,9 +870,10 @@ export class Game {
 			const camHeading = speed > 3 ? lerp( p.heading, heading, 0.45 ) : p.heading;
 			_f.set( Math.sin( camHeading ), 0, Math.cos( camHeading ) );
 			if ( this.input.lookBack ) _f.negate();
-			const dist = 6.2 + clamp( speed / 40, 0, 1 ) * 1.6;
+			// tight, low chase framing like the reference: the car fills the lower third
+			const dist = 5.0 + clamp( speed / 40, 0, 1 ) * 1.1;
 			_v.copy( car.root.position ).addScaledVector( _f, - dist );
-			_v.y += 2.1 + clamp( speed / 40, 0, 1 ) * 0.3;
+			_v.y += 1.75 + clamp( speed / 40, 0, 1 ) * 0.25;
 			// keep the chase camera above the road surface
 			const pr = this.track.project( _v.x, _v.z, p.trackHint );
 			_v.y = Math.max( _v.y, pr.y + 1.1 );
@@ -887,7 +891,7 @@ export class Game {
 			this.rig.position.copy( this.chase.pos ).add( new THREE.Vector3( ( Math.random() - 0.5 ) * sh * 0.06, ( Math.random() - 0.5 ) * sh * 0.06, 0 ) );
 			this.rig.lookAt( this.chase.look );
 			this.rig.rotateY( Math.PI ); // Object3D.lookAt points +z; cameras look down -z
-			const fov = 62 + clamp( speed / 45, 0, 1 ) * 10;
+			const fov = 60 + clamp( speed / 45, 0, 1 ) * 10;
 			if ( Math.abs( this.camera.fov - fov ) > 0.05 ) {
 
 				this.camera.fov = damp( this.camera.fov, fov, 3, dt ); this.camera.updateProjectionMatrix();
@@ -1192,7 +1196,7 @@ export class Game {
 		// manga speed lines at speed / mid-drift (flatscreen chase + arcade cockpit)
 		const kmh = race.player.physics.speed * 3.6;
 		const lines = this.paused || this.xrSession.presenting || REDUCED_MOTION ? 0
-			: clamp( ( kmh - 95 ) / 80, 0, 1 ) * 0.55 + clamp( tel.drift - 0.4, 0, 1 ) * 0.5;
+			: clamp( ( kmh - 80 ) / 70, 0, 1 ) * 0.6 + clamp( tel.drift - 0.35, 0, 1 ) * 0.6;
 		this.speedLines.set( this.cameraMode === 'chase' ? lines : lines * 0.5, 0.5, this.cameraMode === 'chase' ? 0.5 : 0.42 );
 		this.speedLines.update( dt );
 		this.telemetry.update( dt, hd );

@@ -263,7 +263,8 @@ export class XRControls {
 				}
 
 				const ph = ck.phoneScreen.worldToLocal( _w.clone() );
-				if ( Math.abs( ph.x ) < 0.08 && Math.abs( ph.y ) < 0.045 && Math.abs( ph.z ) < 0.03 ) {
+				const half = ck.phoneHalf ?? { x: 0.08, y: 0.045 };
+				if ( Math.abs( ph.x ) < half.x && Math.abs( ph.y ) < half.y && Math.abs( ph.z ) < 0.03 ) {
 
 					h.pressCooldown = 0.6;
 					this.pulse( h, 0.35, 20 );

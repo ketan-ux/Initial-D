@@ -81,6 +81,36 @@ export function buildRoad( track, sides, material, opts = {} ) {
 	const armGeo = new THREE.BoxGeometry( 0.12, 0.12, 2.2 );
 	const headGeo = new THREE.BoxGeometry( 0.5, 0.18, 0.8 );
 	const lineGeo = new THREE.BoxGeometry( 1, 0.02, 1 );
+	const uPoleGeo = new THREE.CylinderGeometry( 0.13, 0.17, 12, 6 );
+	const crossGeo = new THREE.BoxGeometry( 1.9, 0.12, 0.12 );
+	const insGeo = new THREE.BoxGeometry( 0.07, 0.14, 0.07 );
+	const canGeo = new THREE.CylinderGeometry( 0.28, 0.28, 0.75, 8 );
+	const barrierGeo = new THREE.BoxGeometry( 1.25, 0.82, 0.42 );
+	const stripeGeo = new THREE.BoxGeometry( 0.2, 0.86, 0.44 );
+	const wireGeo = new THREE.BoxGeometry( 0.035, 0.035, 1 );
+	const POLE_EVERY = 20; // samples (~40 m)
+	// utility-pole crossarm tips (world space) for sample i, or null if no pole
+	const poleSide = ( i ) => {
+
+		if ( i % POLE_EVERY !== 7 || i >= n ) return 0;
+		const side = 1; // poles follow the left verge down the whole pass
+		if ( track.wallL[ i ] > W + 0.5 || Math.abs( track.curv[ i ] ) > 1 / 24 ) return 0;
+		return side;
+
+	};
+
+	const poleTips = ( i ) => {
+
+		const side = poleSide( i );
+		if ( ! side ) return null;
+		const lat = side * ( W + 1.3 );
+		const x = track.px[ i ] + track.lx[ i ] * lat, z = track.pz[ i ] + track.lz[ i ] * lat;
+		const y = track.py[ i ] + 7.6;
+		return [ - 0.8, 0, 0.8 ].map( ( o ) => new THREE.Vector3( x + track.lx[ i ] * o, y + ( o === 0 ? 0.35 : 0 ), z + track.lz[ i ] * o ) );
+
+	};
+
+	const _wa = new THREE.Vector3(), _wb = new THREE.Vector3(), _wq = new THREE.Quaternion(), _wz = new THREE.Vector3( 0, 0, 1 );
 
 	const place = ( geo, i, lateral, yOff, rotY = 0, scale = null ) => {
 
@@ -298,6 +328,79 @@ export function buildRoad( track, sides, material, opts = {} ) {
 				lamps.push( { x: hx, y: track.py[ i ] + 5.9, z: hz, roadY: track.py[ i ], fx: track.fx[ i ], fz: track.fz[ i ], s: i * track.spacing } );
 
 			}
+
+		}
+
+		// utility poles with sagging power lines (the classic touge silhouette)
+		for ( let i = c0; i < c1; i ++ ) {
+
+			const tips = poleTips( i );
+			if ( ! tips ) continue;
+			const side = poleSide( i );
+			const lat = side * ( W + 1.3 );
+			b.setColor( 0x4f4a55 ).setGlow( 0 );
+			b.addGeometry( uPoleGeo, place( uPoleGeo, i, lat, 2.0 ), { uv: [ U( 'rail', 0.3 ), 0.5 ] } );
+			b.setColor( 0x3a3640 );
+			const cm = place( crossGeo, i, lat, 0 );
+			cm.elements[ 13 ] = track.py[ i ] + 7.6; // absolute height, like the wire tips
+			b.addGeometry( crossGeo, cm, { uv: [ U( 'rail', 0.3 ), 0.5 ] } );
+			b.setColor( 0xd8d6e0 );
+			for ( const t of tips ) {
+
+				tmpM.makeTranslation( t.x, t.y + 0.08, t.z );
+				b.addGeometry( insGeo, tmpM, { uv: [ ACCENT_U, 0.5 ] } );
+
+			}
+
+			if ( ( i / POLE_EVERY | 0 ) % 3 === 0 ) {
+
+				b.setColor( 0x6a6672 );
+				const m = place( canGeo, i, lat - side * 0.38, 0 );
+				m.elements[ 13 ] = track.py[ i ] + 6.4;
+				b.addGeometry( canGeo, m, { uv: [ U( 'rail', 0.3 ), 0.5 ] } );
+
+			}
+
+			// wires to the next pole (if there is one), sagging ~0.5 m
+			let j = i + POLE_EVERY;
+			const next = poleTips( j );
+			if ( ! next ) continue;
+			b.setColor( 0x17151c );
+			for ( let w = 0; w < 3; w ++ ) {
+
+				const A = tips[ w ], B = next[ w ];
+				const SEG = 6;
+				for ( let k = 0; k < SEG; k ++ ) {
+
+					const t0 = k / SEG, t1 = ( k + 1 ) / SEG;
+					_wa.lerpVectors( A, B, t0 ); _wa.y -= Math.sin( t0 * Math.PI ) * 0.55;
+					_wb.lerpVectors( A, B, t1 ); _wb.y -= Math.sin( t1 * Math.PI ) * 0.55;
+					const len = _wa.distanceTo( _wb );
+					_wq.setFromUnitVectors( _wz, _wb.clone().sub( _wa ).normalize() );
+					tmpM.compose( _wa.clone().add( _wb ).multiplyScalar( 0.5 ), _wq, tmpS.set( 1, 1, len ) );
+					b.addGeometry( wireGeo, tmpM, { uv: [ U( 'rail', 0.3 ), 0.5 ] } );
+
+				}
+
+			}
+
+			tmpS.set( 1, 1, 1 );
+
+		}
+
+		// red / white water-filled barricades on the outside of tight corners
+		for ( let i = c0; i < c1; i ++ ) {
+
+			const k = track.curv[ i ];
+			if ( Math.abs( k ) < 1 / 26 || i % 9 !== 4 ) continue;
+			const side = k > 0 ? - 1 : 1;
+			if ( ( side > 0 ? track.wallL : track.wallR )[ i ] > W + 0.5 ) continue;
+			const m = place( barrierGeo, i, side * ( W - 0.55 ), 0.41 );
+			b.setColor( 0xf2eff5 ).setGlow( 0.12 );
+			b.addGeometry( barrierGeo, m, { uv: [ ACCENT_U, 0.5 ] } );
+			b.setColor( 0xe0262e ).setGlow( 0.2 );
+			for ( const o of [ - 0.36, 0.08 ] ) b.addGeometry( stripeGeo, m.clone().multiply( new THREE.Matrix4().makeTranslation( o, 0, 0 ).multiply( new THREE.Matrix4().makeRotationZ( 0.5 ) ) ), { uv: [ ACCENT_U, 0.5 ] } );
+			b.setGlow( 0 );
 
 		}
 
