@@ -601,11 +601,13 @@ export class Cockpit {
 
 		mat.fog = false;
 		const frameMat = toonMaterial( { color: 0x1a1820, rim: 0.3 } );
+		// all three housings are baked into the mounts mesh and all three
+		// glasses into one mesh: two draw calls for every mirror in the car
+		const mb = new GeoBuilder( { color: false } );
+		const gb = new GeoBuilder( { color: false } );
 		const mk = ( w, h, u0, u1, pos, rotY, rotX = 0 ) => {
 
-			const g = new THREE.Group();
-			g.position.copy( pos );
-			g.rotation.set( rotX, Math.PI + rotY, 0, 'YXZ' ); // face the driver (-z)
+			const m = new THREE.Matrix4().compose( pos, new THREE.Quaternion().setFromEuler( new THREE.Euler( rotX, Math.PI + rotY, 0, 'YXZ' ) ), new THREE.Vector3( 1, 1, 1 ) ); // face the driver (-z)
 			// rounded housing (back shell) + a raised bezel lip; the glass is the
 			// same rounded shape, set into the lip so nothing pokes out or floats
 			const r = 0.012, bez = 0.009;
@@ -614,31 +616,26 @@ export class Cockpit {
 			const lipShape = stadium( w + bez * 2, h + bez * 2, r + bez );
 			lipShape.holes.push( stadium( w + 0.002, h + 0.002, r + 0.001 ) );
 			const lip = new THREE.ExtrudeGeometry( lipShape, { depth: 0.006, bevelEnabled: false, curveSegments: 6 } );
-			const frame = new THREE.Mesh( mergeTwo( shell, lip ), frameMat );
+			mb.addGeometry( mergeTwo( shell, lip ), m );
 			const glassGeo = new THREE.ShapeGeometry( stadium( w, h, r ), 6 );
 			const guv = glassGeo.attributes.uv, gp = glassGeo.attributes.position;
 			for ( let i = 0; i < guv.count; i ++ ) guv.setXY( i, gp.getX( i ) / w + 0.5, gp.getY( i ) / h + 0.5 );
-			const glassM = new THREE.Mesh( uvRemap( glassGeo, u0, u1 ), mat );
-			glassM.position.z = 0.003; // recessed inside the 6 mm lip
-			g.add( frame, glassM );
-			this.group.add( g );
-			return g;
+			gb.addGeometry( uvRemap( glassGeo, u0, u1 ).translate( 0, 0, 0.003 ), m ); // recessed inside the 6 mm lip
 
 		};
 
 		// rear-view hanging from the header at the car's centreline, angled to the driver
 		// rear-view: hangs off a mount on the header rail by a short stem
 		const rz = this.model.zOf( roofF + 0.08 );
-		this.rearMirror = mk( 0.21, 0.058, 0.32, 0.68, new THREE.Vector3( 0, roofY - 0.09, rz ), - 0.12, 0.04 ); // nearly square-on, a slight angle toward the driver
-		const mb = new GeoBuilder( { color: false } );
+		mk( 0.21, 0.058, 0.32, 0.68, new THREE.Vector3( 0, roofY - 0.09, rz ), - 0.12, 0.04 ); // nearly square-on, a slight angle toward the driver
 		mb.addGeometry( new THREE.BoxGeometry( 0.06, 0.02, 0.07 ), new THREE.Matrix4().makeTranslation( 0, roofY - 0.012, rz + 0.03 ) ); // mount
 		// stem drops behind the housing and meets its back at a ball joint
 		mb.addGeometry( new THREE.CylinderGeometry( 0.011, 0.011, 0.05, 8 ), new THREE.Matrix4().makeTranslation( 0, roofY - 0.035, rz + 0.03 ) ); // stem
 		mb.addGeometry( new THREE.SphereGeometry( 0.016, 8, 6 ), new THREE.Matrix4().makeTranslation( 0, roofY - 0.064, rz + 0.026 ) ); // ball joint
 		const fm = this.spec.glass.side[ 0 ] + 0.12;
 		const sm = this.model.sections.reduce( ( a, s ) => ( Math.abs( s.f - fm ) < Math.abs( a.f - fm ) ? s : a ), this.model.sections[ 0 ] );
-		this.leftMirror = mk( 0.13, 0.085, 0.72, 1.0, new THREE.Vector3( sm.w1 + 0.1, sm.ybelt + 0.1, this.model.zOf( fm ) - 0.02 ), - 0.55 );
-		this.rightMirror = mk( 0.14, 0.09, 0.0, 0.28, new THREE.Vector3( - sm.w1 - 0.1, sm.ybelt + 0.1, this.model.zOf( fm ) - 0.02 ), 0.3 );
+		mk( 0.13, 0.085, 0.72, 1.0, new THREE.Vector3( sm.w1 + 0.1, sm.ybelt + 0.1, this.model.zOf( fm ) - 0.02 ), - 0.55 );
+		mk( 0.14, 0.09, 0.0, 0.28, new THREE.Vector3( - sm.w1 - 0.1, sm.ybelt + 0.1, this.model.zOf( fm ) - 0.02 ), 0.3 );
 		// door mirrors: a body-coloured shell behind the glass on an arm that
 		// runs back to a sail plate in the window corner, so they sit on the door
 		for ( const s of [ 1, - 1 ] ) {
@@ -655,7 +652,7 @@ export class Cockpit {
 
 		const mounts = new THREE.Mesh( mb.build(), frameMat );
 		mounts.name = 'mirrorMounts';
-		this.group.add( mounts );
+		this.group.add( mounts, new THREE.Mesh( gb.build(), mat ) );
 		this._mirrorFrame = 0;
 
 	}
@@ -664,8 +661,9 @@ export class Cockpit {
 	renderMirrors( renderer, scene ) {
 
 		if ( ! this.mirrorRT || ! this.group.visible ) return;
-		const rate = this.quality.mirrorRate || 1;
-		if ( ( this._mirrorFrame ++ ) % rate !== 0 ) return;
+		// VR overrides the rate (0 = frozen) to keep the extra scene pass cheap
+		const rate = this.mirrorRate ?? ( this.quality.mirrorRate || 1 );
+		if ( rate === 0 || ( this._mirrorFrame ++ ) % rate !== 0 ) return;
 		// Binding a non-output render target makes the renderer use the mirror
 		// camera as a plain mono view, also while an XR session is presenting.
 		const prev = renderer.getRenderTarget();

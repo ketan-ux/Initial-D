@@ -1,10 +1,10 @@
 import { bus } from '../core/events.js';
-import { XR_MULTIVIEW } from '../core/renderer.js';
+import { XR_LAYERS } from '../core/renderer.js';
 
-// Immersive-VR session lifecycle: local-floor space, fixed foveation, the
-// Quest 3's 90 Hz (or 72 Hz) refresh rate. Rendering uses the standard
-// XRWebGLLayer path; WebXR Layers + OVR_multiview2 single-pass stereo is an
-// opt-in experiment (?xrmultiview).
+// Immersive-VR session lifecycle: local-floor space, fixed foveation, a
+// 72 Hz target and a reduced framebuffer scale. Rendering uses the standard
+// XRWebGLLayer path; the WebXR Layers projection layer (?xrlayers) and
+// OVR_multiview2 single-pass stereo on top of it (?xrmultiview) are opt-in.
 export class XRSessionManager {
 
 	constructor( renderer, quality ) {
@@ -13,7 +13,7 @@ export class XRSessionManager {
 		this.quality = quality;
 		this.session = null;
 		this.supported = false;
-		this.preferredRate = 90;
+		this.preferredRate = quality.targetFps || 72;
 
 	}
 
@@ -36,17 +36,19 @@ export class XRSessionManager {
 	async enter() {
 
 		if ( this.session ) return;
-		// 'layers' (projection-layer path) only with the multiview experiment;
-		// the default is the plain XRWebGLLayer path, which renders everything
-		const init = { optionalFeatures: [ 'local-floor', 'bounded-floor', ...( XR_MULTIVIEW ? [ 'layers' ] : [] ), 'hand-tracking' ] };
+		// 'layers' (projection-layer path) only with ?xrlayers / ?xrmultiview;
+		// the default is the plain XRWebGLLayer path, which renders correctly
+		const init = { optionalFeatures: [ 'local-floor', 'bounded-floor', ...( XR_LAYERS ? [ 'layers' ] : [] ), 'hand-tracking' ] };
 		const session = await navigator.xr.requestSession( 'immersive-vr', init );
 		const xr = this.renderer.xr;
 		// three.js takes the projection-layer path whenever the browser exposes
 		// XRWebGLBinding.createProjectionLayer (Quest does), regardless of the
 		// requested features. That path (clearOnAccess: false + texture arrays)
-		// is what broke on device, so steer it onto XRWebGLLayer unless the
-		// multiview experiment is on.
-		if ( ! XR_MULTIVIEW && '_supportsLayers' in xr ) xr._supportsLayers = false;
+		// is what broke on device, so steer it onto XRWebGLLayer unless asked.
+		if ( ! XR_LAYERS && '_supportsLayers' in xr ) xr._supportsLayers = false;
+		// Quest 3's recommended eye buffer is ~1680x1760; 0.8 of it is ~36%
+		// fewer pixels, and fixed foveation softens the periphery further
+		xr.setFramebufferScaleFactor( this.quality.xrScale ?? 0.8 );
 		xr.setReferenceSpaceType( 'local-floor' );
 		xr.setFoveation( this.quality.foveation ?? 1 );
 		await xr.setSession( session );

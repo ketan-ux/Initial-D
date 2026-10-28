@@ -17,7 +17,11 @@ import { clamp } from './math.js';
  *   drift-driven chromatic aberration; cascaded moonlight shadows.
  * - Adaptive resolution keeps the frame inside the preset's budget.
  */
-export const XR_MULTIVIEW = new URLSearchParams( location.search ).has( 'xrmultiview' );
+const _qs = new URLSearchParams( location.search );
+// Diagnostics for the Quest: ?xrlayers tries the WebXR Layers projection-layer
+// path (two views), ?xrmultiview adds OVR_multiview2 single-pass stereo on it.
+export const XR_MULTIVIEW = _qs.has( 'xrmultiview' );
+export const XR_LAYERS = XR_MULTIVIEW || _qs.has( 'xrlayers' );
 
 export class RenderSystem {
 

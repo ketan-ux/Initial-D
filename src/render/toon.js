@@ -171,6 +171,10 @@ export function outlineMaterial( thickness = 0.022, hex = 0x140c1c ) {
 
 }
 
+// Ink hulls live on their own layer: cameras opt in, so mirrors skip them
+// and VR can drop them (they double the draw calls of what they outline).
+export const LAYER_OUTLINE = 6;
+
 export function addOutline( mesh, thickness = 0.022, hex = 0x140c1c ) {
 
 	if ( ! quality.outlines ) return null;
@@ -180,6 +184,7 @@ export function addOutline( mesh, thickness = 0.022, hex = 0x140c1c ) {
 	o.receiveShadow = false;
 	o.renderOrder = - 1;
 	o.matrixAutoUpdate = false;
+	o.layers.set( LAYER_OUTLINE );
 	mesh.add( o );
 	return o;
 

@@ -1,8 +1,9 @@
 import * as THREE from 'three/webgpu';
 import { clamp, wrapAngle } from '../core/math.js';
-import { toonMaterial, emissiveMaterial } from '../render/toon.js';
+import { toonMaterial } from '../render/toon.js';
 import { settings } from '../core/settings.js';
 import { bus } from '../core/events.js';
+import { VR_PANEL_ORDER, VR_HAND_ORDER } from '../ui/VRMenu.js';
 
 const _v = new THREE.Vector3(), _w = new THREE.Vector3(), _q = new THREE.Quaternion();
 const _m4 = new THREE.Matrix4(), _up = new THREE.Vector3( 0, 1, 0 );
@@ -493,7 +494,9 @@ export class XRControls {
 
 	}
 
-	// Legends float ~11 cm above each controller and turn to face the head.
+	// A legend pops up beside a controller only while you look at it (within
+	// ~30° of gaze, under 0.9 m away), offset to the outside of the hand so it
+	// never covers it, turned to face the head.
 	_updateHelp( dt ) {
 
 		if ( this.helpMode && this.helpTime !== Infinity ) {
@@ -504,15 +507,31 @@ export class XRControls {
 		}
 
 		const cam = this.renderer.xr.getCamera();
-		_w.setFromMatrixPosition( cam.matrixWorld );
+		cam.matrixWorld.decompose( _w, _q, _s );
+		const fwd = _d.set( 0, 0, - 1 ).applyQuaternion( _q );
+		const right = _p.set( 1, 0, 0 ).applyQuaternion( _q ).setY( 0 ).normalize();
 		for ( const h of this.hands ) {
 
 			const card = h.card.mesh;
-			card.visible = !! ( this.helpMode && h.source && h.card.rows && h.glove.visible );
-			if ( ! card.visible || ! card.parent ) continue;
-			h.grip.getWorldPosition( _v ).y += 0.11;
+			let want = false;
+			if ( this.helpMode && h.source && h.card.rows && h.glove.visible && card.parent ) {
+
+				h.grip.getWorldPosition( _v );
+				const to = _v.clone().sub( _w );
+				const dist = to.length();
+				want = dist < 0.9 && to.dot( fwd ) / Math.max( dist, 1e-3 ) > 0.86;
+
+			}
+
+			h.card.show = clamp( h.card.show + ( want ? dt : - dt ) * 7, 0, 1 );
+			card.visible = h.card.show > 0.01;
+			if ( ! card.visible ) continue;
+			const side = h.handedness === 'left' ? - 1 : 1;
+			h.grip.getWorldPosition( _v ).addScaledVector( right, side * 0.15 );
+			_v.y += 0.05;
 			card.position.copy( card.parent.worldToLocal( _v ) );
 			card.lookAt( _w );
+			card.scale.setScalar( 0.6 + h.card.show * 0.4 );
 
 		}
 
@@ -557,6 +576,7 @@ export function makeGlove() {
 	const fingers = new THREE.InstancedMesh( seg, mat, FINGERS.length * 3 + 2 );
 	fingers.frustumCulled = false;
 	g.add( palm, cuff, fingers );
+	for ( const m of g.children ) m.renderOrder = VR_HAND_ORDER; // in front of VR panels
 
 	const put = ( k, from, dir, len ) => {
 
@@ -645,12 +665,15 @@ class HelpCard {
 		this.canvas.width = 512; this.canvas.height = 288;
 		this.tex = new THREE.CanvasTexture( this.canvas );
 		this.tex.colorSpace = THREE.NoColorSpace;
-		const mat = emissiveMaterial( 0xffffff, 1.0, { transparent: true, depthWrite: false, side: THREE.DoubleSide } );
-		mat.map = this.tex;
-		mat.depthTest = false;
+		// same draw rules as the menu panel: never hidden by the cabin, but the
+		// hands draw over it
+		const mat = new THREE.MeshBasicNodeMaterial( { map: this.tex, alphaTest: 0.5, side: THREE.DoubleSide } );
+		mat.depthFunc = THREE.AlwaysDepth;
+		mat.fog = false;
 		this.mesh = new THREE.Mesh( new THREE.PlaneGeometry( 0.2, 0.1125 ), mat );
-		this.mesh.renderOrder = 42;
+		this.mesh.renderOrder = VR_PANEL_ORDER + 0.25;
 		this.mesh.visible = false;
+		this.show = 0; // 0…1 pop-in
 
 	}
 
@@ -661,7 +684,7 @@ class HelpCard {
 		if ( ! rows ) return;
 		const c = this.canvas, ctx = c.getContext( '2d' ), W = c.width, H = c.height;
 		ctx.clearRect( 0, 0, W, H );
-		ctx.fillStyle = 'rgba(16,10,30,0.88)';
+		ctx.fillStyle = '#100a1e';
 		ctx.beginPath(); ctx.roundRect( 4, 4, W - 8, H - 8, 28 ); ctx.fill();
 		ctx.strokeStyle = '#ffd166'; ctx.lineWidth = 4; ctx.stroke();
 		ctx.fillStyle = '#ffd166';

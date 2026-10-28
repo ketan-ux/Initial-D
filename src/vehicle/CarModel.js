@@ -4,7 +4,7 @@ import {
 	vertexColor, materialColor
 } from 'three/tsl';
 import { GeoBuilder } from '../render/GeoBuilder.js';
-import { toonMaterial, outlineMaterial, uRimColor } from '../render/toon.js';
+import { toonMaterial, outlineMaterial, uRimColor, LAYER_OUTLINE } from '../render/toon.js';
 import { paintLivery, SIDE_Y0, SIDE_Y1, TOP_V0, TOP_V1, PLATE_UV, SWATCH } from './liveries.js';
 import { createBlobShadow } from '../render/textures.js';
 import { clamp, lerp } from '../core/math.js';
@@ -287,6 +287,7 @@ export class CarModel {
 			// ensure outward normals for the inverted hull
 			const outline = new THREE.Mesh( hullGeo, outlineMaterial( 0.022 ) );
 			outline.name = 'outline';
+			outline.layers.set( LAYER_OUTLINE );
 			this.outline = outline;
 			this.chassis.add( outline );
 

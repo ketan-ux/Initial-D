@@ -55,8 +55,18 @@ export class Terrain {
 
 		}
 
-		this.group.add( this._buildBackdrop() );
+		this.backdrop = this._buildBackdrop();
+		this.group.add( this.backdrop );
 		return this.group;
+
+	}
+
+	// Short-draw-distance profile (VR): switch chunks to the coarse level
+	// sooner and drop the far mountain ring (it sits past the far plane).
+	setLodDistance( d, backdrop = true ) {
+
+		for ( const c of this.group.children ) if ( c.isLOD ) c.levels[ 1 ].distance = d;
+		if ( this.backdrop ) this.backdrop.visible = backdrop;
 
 	}
 

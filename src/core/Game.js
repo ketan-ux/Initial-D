@@ -5,7 +5,8 @@ import { settings, setSetting, progress } from './settings.js';
 import { bus } from './events.js';
 import { clamp, damp, lerp, wrapAngle } from './math.js';
 import { World } from '../world/World.js';
-import { uTime } from '../render/toon.js';
+import { uTime, LAYER_OUTLINE } from '../render/toon.js';
+import { MistRing } from '../render/MistRing.js';
 import { Petals, LAYER_NO_MIRROR } from '../fx/Petals.js';
 import { FX } from '../fx/Particles.js';
 import { Cockpit } from '../vehicle/Cockpit.js';
@@ -35,6 +36,17 @@ const HUD_MODES = [ 'auto', 'diegetic', 'windshield', 'slate', 'off' ];
 const HUD_NAMES = { auto: 'arcade', diegetic: 'diegetic only', windshield: 'windshield', slate: 'floating slate', off: 'off' };
 const REDUCED_MOTION = window.matchMedia?.( '(prefers-reduced-motion: reduce)' ).matches;
 const _v = new THREE.Vector3(), _f = new THREE.Vector3(), _u = new THREE.Vector3(), _q = new THREE.Quaternion();
+// VR performance levels. Stereo doubles every draw, so VR always runs a lean
+// profile: a short draw distance hidden in mountain mist plus a painted
+// silhouette ring, coarse terrain LOD sooner, no headlight shadow pass,
+// slower/shorter mirrors, fewer petals and no ink outlines. The governor
+// steps down a level whenever the headset misses its frame rate.
+const VR_LEVELS = [
+	{ far: 230, fog: 0.0076, lod: 170, mirrorRate: 3, mirrorFar: 90, petals: 0.5 },
+	{ far: 190, fog: 0.009, lod: 140, mirrorRate: 4, mirrorFar: 70, petals: 0.3 },
+	{ far: 155, fog: 0.011, lod: 110, mirrorRate: 6, mirrorFar: 50, petals: 0.15 },
+	{ far: 125, fog: 0.0135, lod: 90, mirrorRate: 0, mirrorFar: 40, petals: 0 }
+];
 
 export class Game {
 
@@ -112,6 +124,10 @@ export class Game {
 
 		this.camera = new THREE.PerspectiveCamera( 70, window.innerWidth / window.innerHeight, 0.06, q.drawDistance );
 		this.camera.layers.enable( LAYER_NO_MIRROR );
+		this.camera.layers.enable( LAYER_OUTLINE );
+		this.vrLevel = 1; // start one notch down; the governor climbs back if there's headroom
+		this.mist = new MistRing();
+		this.scene.add( this.mist.mesh );
 		this.rig = new THREE.Group();
 		this.rig.name = 'rig';
 		this.rig.add( this.camera );
@@ -141,6 +157,7 @@ export class Game {
 		this.ambience = new Ambience( audio );
 		this.menus.setProgress( 0.88, 'Opening the garage' );
 		this.garage = new Garage( this.rs, q );
+		this.garage.camera.layers.enable( LAYER_OUTLINE );
 		this.demo = new TitleDemo( this.world, this.scene, q );
 		this.demo.start();
 
@@ -372,6 +389,8 @@ export class Game {
 		bus.on( 'xr-start', ( info ) => {
 
 			this.xrInfo = info;
+			this._gov = null;
+			this._applyVRPerf();
 			this.cockpit?.setVR( true );
 			this.captions.setVR( true );
 			this.hud.show( false );
@@ -392,6 +411,8 @@ export class Game {
 
 		} );
 		bus.on( 'xr-end', () => {
+
+			this._applyVRPerf();
 
 			this.cockpit?.setVR( false );
 			this.captions.setVR( false );
@@ -566,6 +587,7 @@ export class Game {
 		this.captions.mount( this.cockpit );
 		this.captions.setVR( this.xrSession.presenting );
 		this.xrControls.setCockpit( this.cockpit, this.race.player.physics );
+		this._applyVRPerf(); // mirrors + headlight shadows of the new cars
 		this.hud.setSpec( this.race.player.spec, this.track );
 		this.carAudio = this.race.cars.map( ( c ) => new CarAudio( audio, c, { isPlayer: c === this.race.player } ) );
 		this.fx.clear();
@@ -684,6 +706,67 @@ export class Game {
 			}
 
 		}
+
+	}
+
+	// --------------------------------------------------------------- VR perf
+	_applyVRPerf() {
+
+		const on = this.xrSession.presenting, q = this.quality, L = VR_LEVELS[ this.vrLevel ];
+		this.camera.far = on ? L.far : q.drawDistance;
+		this.camera.updateProjectionMatrix();
+		if ( this.scene.fog ) this.scene.fog.density = on ? L.fog : 0.0021 * q.fogDensity;
+		this.world.terrain.setLodDistance( on ? L.lod : 300, ! on );
+		this.mist.mesh.visible = on;
+		this.petals.setVisibleCount( on ? Math.round( q.petals * L.petals ) : q.petals );
+		for ( const cam of [ this.camera, this.garage?.camera ] ) if ( cam ) {
+
+			if ( on ) cam.layers.disable( LAYER_OUTLINE ); else cam.layers.enable( LAYER_OUTLINE );
+
+		}
+
+		if ( this.cockpit ) {
+
+			this.cockpit.mirrorRate = on ? L.mirrorRate : null;
+			this.cockpit.mirrorCam.far = on ? L.mirrorFar : 120;
+			this.cockpit.mirrorCam.updateProjectionMatrix();
+
+		}
+
+		// headlight shadow map: stop re-rendering it and fade it out (uniforms
+		// only, so no shader rebuild mid-session)
+		for ( const c of this.race?.cars ?? [] ) for ( const s of c.spots ?? [] ) if ( s.castShadow ) {
+
+			s.shadow.autoUpdate = ! on;
+			s.shadow.intensity = on ? 0 : 1;
+
+		}
+
+	}
+
+	// Watches the headset frame rate and trades draw distance for frames.
+	_vrGovernor( dt ) {
+
+		if ( ! this.xrSession.presenting || this.state === 'garage' || this.paused ) return;
+		const g = this._gov ??= { t: 0, n: 0, good: 0 };
+		g.t += dt; g.n ++;
+		if ( g.t < 1.5 ) return;
+		const fps = g.n / g.t, target = this.xrSession.preferredRate || 72;
+		g.t = 0; g.n = 0;
+		this.vrFps = fps;
+		if ( fps < target * 0.85 && this.vrLevel < VR_LEVELS.length - 1 ) {
+
+			this.vrLevel ++; g.good = 0; this._applyVRPerf();
+
+		} else if ( fps > target * 0.95 ) {
+
+			if ( ++ g.good >= 5 && this.vrLevel > 0 ) {
+
+				this.vrLevel --; g.good = 0; this._applyVRPerf();
+
+			}
+
+		} else g.good = 0;
 
 	}
 
@@ -1131,6 +1214,7 @@ export class Game {
 		this.fps = lerp( this.fps, 1 / Math.max( dt, 1e-3 ), 0.05 );
 		this.input.update( dt );
 		this.xrControls.update( dt );
+		this._vrGovernor( dt );
 		this._updateVRMenuPlacement( dt );
 		if ( this.vrMenu.mesh.visible ) this.vrMenu.updateHover( this.xrControls.hands.map( ( h ) => h.ray ) );
 
@@ -1163,7 +1247,7 @@ export class Game {
 
 			const info = this.rs.renderer.info.render;
 			this.hud.el.classList.remove( 'hidden' );
-			this.hud.debug( `${Math.round( this.fps )} fps · ${info.drawCalls} draws · ${( info.triangles / 1000 ).toFixed( 0 )}k tris · ${this.quality.name} · ${this.rs.backend} · pr ${this.rs.pixelRatio.toFixed( 2 )}${this.xrInfo ? ` · XR multiview ${this.xrInfo.multiview ? 'ON' : 'off'}` : ''}` );
+			this.hud.debug( `${Math.round( this.fps )} fps · ${info.drawCalls} draws · ${( info.triangles / 1000 ).toFixed( 0 )}k tris · ${this.quality.name} · ${this.rs.backend} · pr ${this.rs.pixelRatio.toFixed( 2 )}${this.xrInfo ? ` · XR ${this.xrInfo.multiview ? 'multiview' : this.xrInfo.layers ? 'layers' : 'webgl-layer'} · L${this.vrLevel} ${Math.round( this.vrFps || 0 )}fps` : ''}` );
 
 		} else this.hud.debug( '' );
 
@@ -1179,6 +1263,7 @@ export class Game {
 		this.camera.getWorldPosition( _v );
 		this.petals.update( _v, this.demo.cars.map( ( c ) => ( { x: c.physics.x, y: c.physics.y, z: c.physics.z, vx: c.physics.vx, vz: c.physics.vz, drift: c.telemetry.drift } ) ) );
 		this.world.update( dt, _v, this.camera.far );
+		this.mist.update( _v, this.camera.far );
 		// engines of the battling cars once audio is unlocked (quiet under the menu)
 		if ( audio.ready && ! this.demoAudio && ! this.xrSession.presenting ) this.demoAudio = this.demo.cars.map( ( c ) => new CarAudio( audio, c, { isPlayer: false } ) );
 		this._listener( this.camera );
@@ -1291,6 +1376,7 @@ export class Game {
 		this.camera.getWorldPosition( _v );
 		this.petals.update( _v, race.cars.map( ( c ) => ( { x: c.physics.x, y: c.physics.y, z: c.physics.z, vx: c.physics.vx, vz: c.physics.vz, drift: c.telemetry.drift } ) ) );
 		this.world.update( dt, _v, this.camera.far );
+		this.mist.update( _v, this.camera.far );
 		const vigOn = settings.vignette === 'always' || ( settings.vignette === 'auto' && this.xrSession.presenting );
 		this.vignette.update( dt, race.player.physics.yawRate, race.player.physics.slipAngle, settings.vignetteStrength, vigOn && ( this.cameraMode === 'cockpit' || this.xrSession.presenting ) );
 
@@ -1304,7 +1390,8 @@ export class Game {
 
 		}
 
-		this.hud.update( dt, hd );
+		// the DOM HUD is hidden in VR; skip its per-frame canvas + layout work
+		if ( ! this.xrSession.presenting ) this.hud.update( dt, hd );
 		// manga speed lines at speed / mid-drift (flatscreen chase + arcade cockpit)
 		const kmh = race.player.physics.speed * 3.6;
 		const lines = this.paused || this.xrSession.presenting || REDUCED_MOTION ? 0
@@ -1360,6 +1447,7 @@ export class Game {
 		const focus = r.cars[ r.focus ];
 		this.petals.update( _v, r.cars.map( ( c ) => ( { x: c.physics.x, y: c.physics.y, z: c.physics.z, vx: c.physics.vx, vz: c.physics.vz, drift: c.telemetry.drift } ) ) );
 		this.world.update( dt, _v, this.camera.far );
+		this.mist.update( _v, this.camera.far );
 		this._listener( this.camera );
 		this.carAudio?.forEach( ( a ) => a.update( dt * scale, _v.clone(), scale ) );
 		this.vignette.update( dt, 0, 0, 0, false );
