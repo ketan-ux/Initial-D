@@ -24,7 +24,7 @@ export class Cockpit {
 		// driver's eye ~0.5 m behind the top of the windshield (roughly level
 		// with the B-pillar), which leaves room for dash, cluster and wheel
 		const fEye = spec.glass.windshield[ 1 ] + 0.5;
-		this.eyePos = new THREE.Vector3( - 0.36, spec.id === 'fd3s' ? 0.98 : 1.05, carModel.zOf( fEye ) );
+		this.eyePos = new THREE.Vector3( - 0.36, spec.id === 'fd3s' ? 0.98 : spec.id === 's13' ? 1.02 : 1.05, carModel.zOf( fEye ) );
 		this.eye = new THREE.Object3D();
 		this.eye.position.copy( this.eyePos );
 		this.group.add( this.eye );

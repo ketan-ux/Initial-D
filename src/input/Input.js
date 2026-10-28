@@ -17,6 +17,12 @@ const ACTIONS = {
 	KeyU: 'hud', KeyV: 'vignette', F3: 'debug', KeyL: 'lookBack', Enter: 'confirm'
 };
 
+const PAD_ACTIONS = [
+	[ 5, [ 'shiftUp' ] ], [ 4, [ 'shiftDown' ] ], [ 3, [ 'camera' ] ], [ 9, [ 'pause' ] ], [ 8, [ 'hud' ] ],
+	[ 12, [ 'headlights', 'menuUp' ] ], [ 13, [ 'lookBackToggle', 'menuDown' ] ], [ 2, [ 'reset' ] ],
+	[ 0, [ 'menuOk' ] ], [ 1, [ 'menuBack' ] ]
+];
+
 export class Input extends Emitter {
 
 	constructor() {
@@ -104,16 +110,21 @@ export class Input extends Emitter {
 
 			}
 
-			const edge = ( i, action ) => {
+			// rising edges; menu actions share buttons with driving ones and
+			// Game only listens to whichever applies in the current state
+			for ( const [ i, actions ] of PAD_ACTIONS ) {
 
 				const pressed = !! pad.buttons[ i ]?.pressed;
-				if ( pressed && ! this.prevPad[ i ] ) this.emit( action );
+				if ( pressed && ! this.prevPad[ i ] ) for ( const a of actions ) this.emit( a );
 				this.prevPad[ i ] = pressed;
 
-			};
+			}
 
-			edge( 5, 'shiftUp' ); edge( 4, 'shiftDown' ); edge( 3, 'camera' ); edge( 9, 'pause' );
-			edge( 8, 'hud' ); edge( 12, 'headlights' ); edge( 2, 'reset' ); edge( 13, 'lookBackToggle' );
+			// left stick flicks also move menu focus
+			const ay = pad.axes[ 1 ] || 0;
+			const flick = ay > 0.6 ? 1 : ay < - 0.6 ? - 1 : 0;
+			if ( flick && flick !== this.prevFlick ) this.emit( flick > 0 ? 'menuDown' : 'menuUp' );
+			this.prevFlick = flick;
 
 		}
 

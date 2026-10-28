@@ -1,6 +1,7 @@
 // Car definitions: body loft keyframes (metres from the front bumper),
-// running gear, engine/gearbox data and liveries. Both cars are JDM
-// right-hand drive with pop-up headlights and rear-wheel drive.
+// running gear, engine/gearbox data and liveries. All three are JDM
+// right-hand-drive, rear-wheel-drive coupes; the AE86 and FD3S have pop-up
+// headlights, the Silvia S13 has fixed projector lamps.
 //
 // Loft keyframe: [ f, w0 (rocker half-width), w1 (shoulder half-width),
 //   w2 (roof/hood edge half-width), yb (bottom), ybelt (beltline),
@@ -9,6 +10,8 @@
 export const CARS = {
 	ae86: {
 		id: 'ae86',
+		make: 'Toyota',
+		model: 'AE86 Trueno',
 		name: 'Sprinter Trueno GT-APEX',
 		code: 'AE86',
 		years: '1983–1987',
@@ -40,12 +43,13 @@ export const CARS = {
 		popup: { f: 0.22, x: 0.5, w: 0.36, d: 0.3 },
 		tail: { style: 'bar', y: 0.72, h: 0.12 },
 		spoiler: 'lip',
+		ratings: { drift: 0.92, grip: 0.62 },
 		mass: 960,
 		cgHeight: 0.48,
 		weightFront: 0.53,
 		inertiaScale: 1.0,
 		engine: {
-			type: 'inline4', cylinders: 4, idle: 950, redline: 8200, limiter: 8400,
+			type: 'inline4', label: '4A-GE 1.6 twin-cam I4', cylinders: 4, idle: 950, redline: 8200, limiter: 8400,
 			torque: [ [ 1000, 105 ], [ 3000, 128 ], [ 4800, 150 ], [ 6000, 160 ], [ 7200, 154 ], [ 8400, 128 ] ],
 			inertia: 0.16, sound: { base: 1.0, rasp: 0.85, lope: 0.0 }
 		},
@@ -64,6 +68,8 @@ export const CARS = {
 	},
 	fd3s: {
 		id: 'fd3s',
+		make: 'Mazda',
+		model: 'RX-7 FD3S',
 		name: 'RX-7 Type R',
 		code: 'FD3S',
 		years: '1991–2002',
@@ -94,12 +100,13 @@ export const CARS = {
 		popup: { f: 0.26, x: 0.56, w: 0.34, d: 0.28 },
 		tail: { style: 'round3', y: 0.7, h: 0.12 },
 		spoiler: 'wing',
+		ratings: { drift: 0.7, grip: 0.86 },
 		mass: 1280,
 		cgHeight: 0.44,
 		weightFront: 0.50,
 		inertiaScale: 1.05,
 		engine: {
-			type: 'rotary', cylinders: 4, idle: 900, redline: 8000, limiter: 8200,
+			type: 'rotary', label: '13B-REW twin-turbo rotary', turbo: true, cylinders: 4, idle: 900, redline: 8000, limiter: 8200,
 			torque: [ [ 1000, 150 ], [ 3000, 230 ], [ 4500, 294 ], [ 5500, 300 ], [ 6500, 285 ], [ 8200, 220 ] ],
 			inertia: 0.12, sound: { base: 1.0, rasp: 0.55, lope: 0.35 }
 		},
@@ -115,9 +122,65 @@ export const CARS = {
 			{ name: 'Shiro Raiden', desc: 'White with blue lightning, 雷電', draw: 'raiden' },
 			{ name: 'Midnight Gekkō', desc: 'Midnight purple, gold 月光 moon', draw: 'gekko' }
 		]
+	},
+	s13: {
+		id: 's13',
+		make: 'Nissan',
+		model: 'Silvia S13',
+		name: 'Silvia K\'s',
+		code: 'S13',
+		years: '1988–1993',
+		blurb: 'Balanced turbo coupe with a long wheelbase. Holds a slide forever and forgives a lazy countersteer.',
+		length: 4.47,
+		width: 1.69,
+		wheelbase: 2.475,
+		frontAxleF: 0.92,
+		track: 1.465,
+		wheelRadius: 0.3,
+		tireWidth: 0.205,
+		rimColor: 0xd2d5de,
+		rimStyle: 'spoke6',
+		loft: [
+			[ 0.00, 0.62, 0.66, 0.52, 0.28, 0.44, 0.52, 0.53 ],
+			[ 0.10, 0.78, 0.81, 0.70, 0.22, 0.56, 0.63, 0.64 ],
+			[ 0.40, 0.82, 0.84, 0.74, 0.22, 0.62, 0.69, 0.70 ],
+			[ 1.00, 0.83, 0.845, 0.74, 0.22, 0.66, 0.73, 0.75 ],
+			[ 1.62, 0.83, 0.845, 0.72, 0.22, 0.70, 0.78, 0.80 ],
+			[ 2.30, 0.83, 0.845, 0.58, 0.22, 0.75, 1.20, 1.26 ],
+			[ 2.85, 0.83, 0.845, 0.58, 0.22, 0.76, 1.21, 1.27 ],
+			[ 3.30, 0.835, 0.85, 0.60, 0.22, 0.77, 1.14, 1.19 ],
+			[ 3.82, 0.84, 0.85, 0.68, 0.22, 0.79, 0.90, 0.92 ],
+			[ 4.30, 0.82, 0.84, 0.70, 0.24, 0.80, 0.89, 0.90 ],
+			[ 4.47, 0.74, 0.77, 0.62, 0.32, 0.76, 0.84, 0.85 ]
+		],
+		glass: { windshield: [ 1.64, 2.28 ], side: [ 1.66, 3.5 ], rear: [ 3.42, 3.84 ], pillars: [ [ 1.62, 1.78 ], [ 2.92, 3.02 ], [ 3.36, 3.52 ] ] },
+		headlamps: { style: 'fixed', x: 0.53, w: 0.4, h: 0.1 },
+		tail: { style: 'bar', y: 0.74, h: 0.13 },
+		spoiler: 'trunk',
+		ratings: { drift: 0.85, grip: 0.74 },
+		mass: 1170,
+		cgHeight: 0.47,
+		weightFront: 0.55,
+		inertiaScale: 1.03,
+		engine: {
+			type: 'inline4', label: 'SR20DET 2.0 turbo I4', turbo: true, cylinders: 4, idle: 850, redline: 7500, limiter: 7700,
+			torque: [ [ 1000, 125 ], [ 2500, 185 ], [ 4000, 262 ], [ 5000, 258 ], [ 6000, 242 ], [ 7000, 212 ], [ 7700, 186 ] ],
+			inertia: 0.15, sound: { base: 0.92, rasp: 0.7, lope: 0.0 }
+		},
+		gears: [ 3.321, 1.902, 1.308, 1.0, 0.759 ],
+		reverse: 3.382,
+		finalDrive: 4.08,
+		grip: 1.08,
+		steerLock: 0.64,
+		brakeForce: 11800,
+		dragCoef: 0.33,
+		liveries: [
+			{ name: 'Warm White Two-Tone', desc: 'Factory two-tone, 山茶花 club script', draw: 'sazanka' },
+			{ name: 'Lime Green', desc: 'Lime metallic, black hood, 緑 kanji', draw: 'lime' },
+			{ name: 'Yozora Blue', desc: 'Night blue with silver stars', draw: 'yozora' }
+		]
 	}
 };
-
 export const CAR_IDS = Object.keys( CARS );
 
 export function torqueAt( engine, rpm ) {

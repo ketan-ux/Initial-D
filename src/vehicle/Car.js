@@ -38,7 +38,7 @@ export class Car {
 
 				const side = i === 0 ? 1 : - 1;
 				const spot = new THREE.SpotLight( 0xfff0d2, 0, 95, 0.44, 0.55, 1.15 );
-				spot.position.set( side * this.spec.popup.x * 0.9, 0.7, zFront - 0.35 );
+				spot.position.set( side * ( this.spec.popup ?? this.spec.headlamps ).x * 0.9, 0.7, zFront - 0.35 );
 				spot.target.position.set( side * 0.6, 0.0, zFront + 26 );
 				if ( shadow && i === 0 ) {
 

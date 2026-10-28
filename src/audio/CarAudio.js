@@ -5,7 +5,7 @@ const _p = new THREE.Vector3();
 
 // Per-car sound: two-layer procedural engine (on/off throttle), intake roar
 // through the firewall, straight-cut gear whine under the shifter, turbo
-// whistle + blow-off (rotary), tyre squeal, and for the player car: wind,
+// whistle + blow-off (turbo cars), tyre squeal, and for the player car: wind,
 // floor-pan rumble, gravel pings and guardrail scrape. Each source sits on
 // its own PannerNode at the physical spot in the car (HRTF in VR).
 export class CarAudio {
@@ -20,6 +20,7 @@ export class CarAudio {
 		const ctx = audio.ctx;
 		const spec = car.spec, snd = spec.engine.sound;
 		this.rotary = spec.engine.type === 'rotary';
+		this.turbocharged = !! spec.engine.turbo;
 		const m = car.model;
 		// anchor points in chassis space
 		this.anchors = {
@@ -85,8 +86,8 @@ export class CarAudio {
 		this.sources.push( sqN );
 		this.sqPhase = 0;
 
-		// --- turbo whistle (rotary FD) ---
-		if ( this.rotary ) {
+		// --- turbo whistle (FD rotary, S13 SR20DET) ---
+		if ( this.turbocharged ) {
 
 			this.turbo = ctx.createOscillator(); this.turbo.type = 'sine'; this.turbo.frequency.value = 2400;
 			this.turboGain = ctx.createGain(); this.turboGain.gain.value = 0;
@@ -195,7 +196,7 @@ export class CarAudio {
 		a.setPannerPos( this.sqPan, this._pos( 'rear' ) );
 
 		// turbo + blow-off valve
-		if ( this.rotary ) {
+		if ( this.turbocharged ) {
 
 			this.boost = damp( this.boost, load * clamp( ( rpm - 2800 ) / 3500, 0, 1 ), 3, dt );
 			this.turbo.frequency.setTargetAtTime( 1800 + this.boost * 3600, t, 0.05 );
@@ -210,7 +211,7 @@ export class CarAudio {
 		}
 
 		// lift-off pops (backfire) on the high-revving 4A-GE
-		if ( ! this.rotary && this.prevThrottle > 0.8 && load < 0.15 && rpmN > 0.7 && Math.random() < 0.6 ) {
+		if ( ! this.turbocharged && this.prevThrottle > 0.8 && load < 0.15 && rpmN > 0.7 && Math.random() < 0.6 ) {
 
 			for ( let i = 0; i < 3; i ++ ) a.noiseBurst( { dur: 0.06, freq: 500 + Math.random() * 400, q: 0.8, gain: 0.35, panner: this.exPan || this.engPan, at: i * 0.07 + Math.random() * 0.04 } );
 

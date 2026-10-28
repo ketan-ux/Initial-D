@@ -163,6 +163,17 @@ export class RenderSystem {
 	render( scene, camera, driftAmount = 0 ) {
 
 		this.uChroma.value = clamp( driftAmount, 0, 1 ) * 0.85;
+		// the post pipeline's scene pass is bound to one scene + camera: rebuild
+		// it when the game switches between the mountain and the garage
+		if ( this.quality.post && ! this.xrPresenting && ( scene !== this.scene || camera !== this.camera ) ) {
+
+			this.scene = scene;
+			this.camera = camera;
+			this.resize();
+			this.buildPipeline();
+
+		}
+
 		if ( this.pipeline && ! this.xrPresenting && camera === this.camera ) {
 
 			this.pipeline.render();

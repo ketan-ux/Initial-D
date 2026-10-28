@@ -39,8 +39,8 @@ export class Race {
 		this.cars.push( this.player );
 		if ( this.mode === 'battle' ) {
 
-			const rivalId = opts.carId === 'ae86' ? 'fd3s' : 'ae86';
-			this.rival = new Car( CARS[ rivalId ], opts.carId === 'ae86' ? 0 : 0, this.track, q, {
+			const rivalId = opts.rivalId ?? ( opts.carId === 'ae86' ? 'fd3s' : 'ae86' );
+			this.rival = new Car( CARS[ rivalId ], opts.rivalLivery ?? 0, this.track, q, {
 				spotlights: q.headlightSpots >= 4 ? 2 : 0
 			} );
 			this.rival.physics.assist = 0.35;
@@ -55,6 +55,8 @@ export class Race {
 		this.recorder = new ReplayRecorder( this.cars );
 		this._buildStartLights();
 		this.stats = { topSpeed: 0, hooks: 0, wallHits: 0, maxDrift: 0, driftTime: 0 };
+		// drift score: points flow while sliding, chained slides raise the multiplier
+		this.drift = { score: 0, current: 0, mult: 1, active: false, chain: 0, idle: 0 };
 		this.flags = {};
 		this.closeTimer = 0;
 		this.driftTimer = 0;
@@ -369,6 +371,8 @@ export class Race {
 
 		}
 
+		this._scoreDrift( dt, tel, pp );
+
 		// --- spotter radio ---
 		const say = ( id, o ) => this.radio?.say( id, o );
 		const lead = this.rival ? Math.max( pp.s, this.rival.physics.s ) : pp.s;
@@ -413,6 +417,12 @@ export class Race {
 			} else if ( e.type === 'wallHit' ) {
 
 				this.stats.wallHits ++;
+				// a hit wipes the unbanked slide and resets the chain
+				if ( e.impact > 2 ) {
+
+					this.drift.current = 0; this.drift.mult = 1; this.drift.chain = 0;
+
+				}
 				if ( e.impact > 4 ) say( 'guardrail' );
 
 			}
@@ -477,6 +487,42 @@ export class Race {
 
 	}
 
+	_scoreDrift( dt, tel, pp ) {
+
+		const d = this.drift;
+		const slipDeg = Math.abs( pp.slipAngle ) * 57.3;
+		const sliding = tel.drift > 0.3 && pp.speed > 8 && slipDeg > 8;
+		if ( sliding ) {
+
+			d.active = true;
+			d.idle = 0;
+			d.chain += dt;
+			// angle x speed, scaled by the chain multiplier
+			d.current += dt * slipDeg * ( pp.speed * 3.6 / 50 ) * d.mult * 2.2;
+			if ( d.chain > 1.6 && d.mult < 5 ) {
+
+				d.mult = Math.min( 5, d.mult + 0.5 );
+				d.chain = 0;
+
+			}
+
+		} else {
+
+			d.active = false;
+			d.idle += dt;
+			if ( d.current > 0 && d.idle > 0.6 ) {
+
+				d.score += d.current;
+				d.current = 0;
+
+			}
+
+			if ( d.idle > 2.5 ) d.mult = 1;
+
+		}
+
+	}
+
 	_parkingAI() {
 
 		const lot = this.track.lots?.find( ( l ) => l.name === 'cooldown' );
@@ -526,8 +572,9 @@ export class Race {
 
 		const pp = this.player.physics;
 		const cars = this.cars.map( ( c ) => ( {
-			x: c.physics.x, z: c.physics.z, heading: c.physics.heading, color: c === this.player ? '#ff5fa2' : '#ffe14d', me: c === this.player
+			x: c.physics.x, z: c.physics.z, heading: c.physics.heading, color: c === this.player ? '#ff9a1a' : '#ffd23f', me: c === this.player
 		} ) );
+		const span = this.track.finishS - this.track.startS;
 		const position = this.rival ? ( pp.s >= this.rival.physics.s ? 1 : 2 ) : 1;
 		return {
 			telemetry: this.player.telemetry, spec: this.player.spec,
@@ -535,7 +582,10 @@ export class Race {
 			gap: this.rival && this.phase === 'race' ? this.gapS : null,
 			heading: pp.heading, center: { x: pp.x, z: pp.z }, cars,
 			section: SECTION_NAMES[ this.track.sectionAt( pp.s ) ] ?? '',
-			s: pp.s, finishS: this.track.finishS, autoShift: pp.autoShift, handbrake: pp.controls.handbrake
+			s: pp.s, finishS: this.track.finishS, autoShift: pp.autoShift, handbrake: pp.controls.handbrake,
+			progress: ( pp.s - this.track.startS ) / span,
+			rivalProgress: this.rival ? ( this.rival.physics.s - this.track.startS ) / span : null,
+			drift: this.drift
 		};
 
 	}
@@ -547,6 +597,7 @@ export class Race {
 			mode: this.mode, won: this.won, time: this.playerTime, rivalTime, newRecord: this.newRecord,
 			best: progress.bestTimes[ this.player.spec.id ], topSpeed: this.stats.topSpeed, hooks: this.stats.hooks,
 			wallHits: this.stats.wallHits, driftTime: this.stats.driftTime, maxDrift: this.stats.maxDrift,
+			driftScore: Math.round( this.drift.score + this.drift.current ),
 			car: this.player.spec
 		};
 

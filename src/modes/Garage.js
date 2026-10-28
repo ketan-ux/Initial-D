@@ -1,17 +1,19 @@
 import * as THREE from 'three/webgpu';
+import { uniform, uv } from 'three/tsl';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CarModel } from '../vehicle/CarModel.js';
 import { CARS, CAR_IDS } from '../vehicle/carSpecs.js';
-import { toonMaterial, emissiveMaterial, uMoonDir } from '../render/toon.js';
+import { toonMaterial } from '../render/toon.js';
 import { createSky, FOG_COLOR } from '../render/sky.js';
 import { GeoBuilder } from '../render/GeoBuilder.js';
 import { Petals } from '../fx/Petals.js';
-import { mulberry32 } from '../core/math.js';
+import { buildGarageSet, ROOM } from './GarageSet.js';
 import { settings, setSetting, progress, saveProgress } from '../core/settings.js';
 
-// Interactive showroom under a moonlit cherry blossom tree. Mouse/touch orbit
-// on flatscreens; 1:1 room-scale walkaround in VR (the car sits at the
-// local-floor origin so you can physically walk around it).
+// Interactive showroom: a tuner garage with the roll-up door open onto a
+// moonlit cherry tree. Mouse/touch orbit on flatscreens; 1:1 room-scale
+// walkaround in VR (the car sits at the local-floor origin so you can
+// physically walk around it).
 export class Garage {
 
 	constructor( renderSystem, quality ) {
@@ -21,8 +23,8 @@ export class Garage {
 		this.scene = new THREE.Scene();
 		this.scene.fog = new THREE.FogExp2( FOG_COLOR.getHex(), 0.012 );
 		this.scene.background = FOG_COLOR.clone();
-		this.camera = new THREE.PerspectiveCamera( 42, window.innerWidth / window.innerHeight, 0.05, 600 );
-		this.camera.position.set( 4.6, 1.7, 5.2 );
+		this.camera = new THREE.PerspectiveCamera( 46, window.innerWidth / window.innerHeight, 0.05, 600 );
+		this.camera.position.set( 4.2, 1.3, 5.3 );
 		this.rig = new THREE.Group();
 		this.rig.add( this.camera );
 		this.scene.add( this.rig );
@@ -30,6 +32,7 @@ export class Garage {
 		this.scene.add( this.turntable );
 		this.spin = true;
 		this.inspect = false;
+		this.headlights = true; // the showroom shot: pop-ups up, beams on
 		this._build();
 		this.setCar( settings.car, settings.livery[ settings.car ] ?? 0 );
 
@@ -40,103 +43,36 @@ export class Garage {
 		const s = this.scene, q = this.quality;
 		this.sky = createSky();
 		s.add( this.sky );
-		const moon = new THREE.DirectionalLight( 0xd6d0ff, q.toon === 'unlit' ? 0 : 1.6 );
-		moon.position.copy( uMoonDir.value ).multiplyScalar( 30 );
-		s.add( moon );
-		if ( q.toon !== 'unlit' ) s.add( new THREE.HemisphereLight( 0xa08ce8, 0x3a2a48, 1.3 ) );
-		// key light from the lantern side
-		if ( q.toon !== 'unlit' ) {
+		const set = buildGarageSet( q );
+		s.add( set.group );
+		this.set = set;
+		// turntable plate (rotates with the car); the glowing ring stays put
+		const plate = new GeoBuilder( { color: true } );
+		plate.setColor( 0x3a3846 );
+		plate.addGeometry( new THREE.CylinderGeometry( 2.95, 2.98, 0.08, 64 ), new THREE.Matrix4().makeTranslation( 0, 0.04, 0 ) );
+		plate.setColor( 0x2c2a35 );
+		for ( let i = 0; i < 12; i ++ ) {
 
-			const key = new THREE.SpotLight( 0xffd2a8, 60, 30, 0.6, 0.6, 1.2 );
-			key.position.set( - 4, 6, 3 );
-			key.target.position.set( 0, 0.5, 0 );
-			s.add( key, key.target );
-
-		}
-
-		// display platform: stone disc + gravel ring + petal carpet
-		const b = new GeoBuilder( { color: true, sway: true } );
-		const rng = mulberry32( 7 );
-		const disc = new THREE.CylinderGeometry( 4.2, 4.4, 0.18, 48 );
-		b.setColor( 0x6d6584 );
-		b.addGeometry( disc, new THREE.Matrix4().makeTranslation( 0, 0.09, 0 ) );
-		const ground = new THREE.CircleGeometry( 60, 64 ).rotateX( - Math.PI / 2 );
-		b.setColor( 0x2f4e4a );
-		b.addGeometry( ground, null );
-		for ( let i = 0; i < 380; i ++ ) {
-
-			const a = rng() * Math.PI * 2, r = 4.5 + rng() * 9;
-			b.setColor( [ 0xf2b3cf, 0xffd3e6, 0xf7a1c8 ][ ( rng() * 3 ) | 0 ] );
-			const petal = new THREE.CircleGeometry( 0.08 + rng() * 0.1, 5 ).rotateX( - Math.PI / 2 );
-			b.addGeometry( petal, new THREE.Matrix4().makeTranslation( Math.cos( a ) * r, 0.01 + rng() * 0.01, Math.sin( a ) * r ) );
+			const a = ( i / 12 ) * Math.PI * 2;
+			plate.addGeometry( new THREE.BoxGeometry( 0.02, 0.005, 2.9 ).translate( 0, 0.082, 1.45 ), new THREE.Matrix4().makeRotationY( a ) );
 
 		}
 
-		// the big sakura tree behind the platform
-		const tree = new THREE.Matrix4().makeTranslation( - 6.5, 0, - 5 );
-		b.setColor( 0x3d2a30 );
-		const trunk = new THREE.CylinderGeometry( 0.35, 0.65, 5.5, 8 ).translate( 0, 2.75, 0 );
-		b.addGeometry( trunk, tree );
-		for ( let i = 0; i < 6; i ++ ) {
+		plate.addGeometry( new THREE.RingGeometry( 1.2, 1.24, 48 ).rotateX( - Math.PI / 2 ), new THREE.Matrix4().makeTranslation( 0, 0.083, 0 ) );
+		const plateMesh = new THREE.Mesh( plate.build(), toonMaterial( { vertexColors: true, rim: 0.2 } ) );
+		plateMesh.receiveShadow = true;
+		this.turntable.add( plateMesh );
 
-			const br = new THREE.CylinderGeometry( 0.12, 0.25, 4, 6 ).translate( 0, 2, 0 );
-			const m = new THREE.Matrix4().makeTranslation( - 6.5, 4.2, - 5 ).multiply( new THREE.Matrix4().makeRotationY( i * 1.05 ) ).multiply( new THREE.Matrix4().makeRotationZ( 0.9 ) );
-			b.addGeometry( br, m );
-
-		}
-
-		for ( let i = 0; i < 22; i ++ ) {
-
-			const a = rng() * Math.PI * 2, r = rng() * 4.2;
-			const puff = new THREE.IcosahedronGeometry( 1.5 + rng() * 1.1, 1 );
-			b.setColor( [ 0xffb8d6, 0xff9cc6, 0xffd3e6, 0xf7a1c8 ][ ( rng() * 4 ) | 0 ] );
-			b.setSway( 1 );
-			b.addGeometry( puff, new THREE.Matrix4().makeTranslation( - 6.5 + Math.cos( a ) * r, 6 + rng() * 2.5, - 5 + Math.sin( a ) * r ).multiply( new THREE.Matrix4().makeScale( 1, 0.75, 1 ) ) );
-			b.setSway( 0 );
-
-		}
-
-		// stone lanterns (toro)
-		for ( const [ x, z ] of [ [ 3.8, - 3.6 ], [ - 4.4, 3.2 ] ] ) {
-
-			b.setColor( 0x8a8496 );
-			const m = new THREE.Matrix4().makeTranslation( x, 0, z );
-			b.addGeometry( new THREE.CylinderGeometry( 0.35, 0.45, 0.3, 6 ).translate( 0, 0.15, 0 ), m );
-			b.addGeometry( new THREE.CylinderGeometry( 0.12, 0.14, 0.9, 6 ).translate( 0, 0.75, 0 ), m );
-			b.addGeometry( new THREE.BoxGeometry( 0.55, 0.45, 0.55 ).translate( 0, 1.4, 0 ), m );
-			b.addGeometry( new THREE.ConeGeometry( 0.55, 0.4, 6 ).translate( 0, 1.85, 0 ), m );
-
-		}
-
-		// distant torii
-		b.setColor( 0xe8462e );
-		const tm = new THREE.Matrix4().makeTranslation( 4, 0, - 14 ).multiply( new THREE.Matrix4().makeRotationY( - 0.4 ) );
-		for ( const x of [ - 1.8, 1.8 ] ) b.addGeometry( new THREE.CylinderGeometry( 0.2, 0.24, 4.6, 8 ).translate( x, 2.3, 0 ), tm );
-		b.addGeometry( new THREE.BoxGeometry( 5.2, 0.28, 0.4 ).translate( 0, 3.9, 0 ), tm );
-		b.setColor( 0x1b1420 );
-		b.addGeometry( new THREE.BoxGeometry( 6, 0.32, 0.5 ).translate( 0, 4.7, 0 ), tm );
-		const env = new THREE.Mesh( b.build(), toonMaterial( { vertexColors: true, sway: true, rim: 0.3 } ) );
-		env.name = 'garageEnv';
-		s.add( env );
-
-		// lantern glows
-		for ( const [ x, z ] of [ [ 3.8, - 3.6 ], [ - 4.4, 3.2 ] ] ) {
-
-			const g = new THREE.Mesh( new THREE.BoxGeometry( 0.4, 0.3, 0.4 ), emissiveMaterial( 0xffb35a, 2.2 ) );
-			g.position.set( x, 1.4, z );
-			s.add( g );
-
-		}
-
-		this.petals = new Petals( Math.round( q.petals * 0.4 ) );
-		this.petals.uSize.value.set( 26, 14, 26 );
+		// a few petals drift in through the open door
+		this.petals = new Petals( Math.round( q.petals * 0.25 ) );
+		this.petals.uSize.value.set( 22, 10, 22 );
 		s.add( this.petals.mesh );
 
 		this.controls = new OrbitControls( this.camera, this.rs.renderer.domElement );
 		this.controls.target.set( 0, 0.6, 0 );
 		this.controls.enableDamping = true;
 		this.controls.minDistance = 3.2;
-		this.controls.maxDistance = 11;
+		this.controls.maxDistance = ROOM.w - 1.2; // stay inside the garage
 		this.controls.maxPolarAngle = Math.PI * 0.49;
 		this.controls.enablePan = false;
 		this.controls.addEventListener( 'start', () => {
@@ -160,11 +96,57 @@ export class Garage {
 		this.carId = id;
 		this.liveryIndex = liveryIndex;
 		this.car = new CarModel( CARS[ id ], liveryIndex, this.quality );
-		this.car.root.position.y = 0.18;
+		this.car.root.position.y = 0.085; // on the turntable plate
 		this.turntable.add( this.car.root );
-		this.car.setHeadlights( this.headlights ?? false );
+		this.car.setHeadlights( this.headlights );
+		this._addBeams();
 		this.applyWear();
 		setSetting( 'car', id );
+
+	}
+
+	// Showroom-only headlight beams: soft additive cones out of each lamp plus
+	// one forward spot (lit presets) that throws a warm pool onto the floor.
+	_addBeams() {
+
+		const car = this.car, spec = CARS[ this.carId ];
+		const lamp = spec.popup ?? spec.headlamps;
+		const head = car.uniforms.head;
+		if ( ! this.beamMat ) {
+
+			const m = new THREE.MeshBasicNodeMaterial( { color: 0xffe2a8, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending } );
+			m.fog = false;
+			this.beamHead = uniform( 0 );
+			m.opacityNode = uv().y.pow( 3 ).mul( this.beamHead ).mul( 0.13 );
+			this.beamMat = m;
+
+		}
+
+		const len = 3.4;
+		const geo = new THREE.ConeGeometry( 0.85, len, 20, 1, true ).translate( 0, - len / 2, 0 ).rotateX( - Math.PI / 2 );
+		const y = spec.popup ? car.popups.position.y + 0.06 : car.headAnchors[ 0 ].position.y;
+		const z = car.zOf( spec.popup ? spec.popup.f + spec.popup.d * 0.4 : 0.04 );
+		for ( const sx of [ 1, - 1 ] ) {
+
+			const beam = new THREE.Mesh( geo, this.beamMat );
+			beam.position.set( sx * lamp.x, y, z );
+			beam.rotation.x = 0.13; // aimed slightly down at the floor
+			beam.renderOrder = 2;
+			car.chassis.add( beam );
+
+		}
+
+		if ( this.quality.toon !== 'unlit' ) {
+
+			const spot = new THREE.SpotLight( 0xffe0b0, 0, 14, 0.55, 0.6, 1.2 );
+			spot.position.set( 0, y, z );
+			spot.target.position.set( 0, 0, z + 6 );
+			car.chassis.add( spot, spot.target );
+			this.headSpot = spot;
+
+		}
+
+		this._head = head;
 
 	}
 
@@ -243,7 +225,19 @@ export class Garage {
 		}
 
 		if ( ! this.rs.xrPresenting ) this.controls.update();
+		// compose the car right of centre, clear of the vehicle-select column
+		const off = ! this.rs.xrPresenting && this.camera.aspect > 1.2 ? - 5 : 0;
+		if ( this.camera.filmOffset !== off ) {
+
+			this.camera.filmOffset = off;
+			this.camera.updateProjectionMatrix();
+
+		}
+
 		this.car.update( dt, { steerAngle: this.inspect ? 0.45 : 0.25, wheelSpin: 0, brake: 0, discHeat: 0 } );
+		const head = this.car.uniforms.head.value;
+		this.beamHead.value = head;
+		if ( this.headSpot ) this.headSpot.intensity = head * 14;
 		const camPos = new THREE.Vector3();
 		this.camera.getWorldPosition( camPos );
 		this.sky.position.copy( camPos );
@@ -267,7 +261,7 @@ export class Garage {
 	exitVR() {
 
 		this.rig.position.set( 0, 0, 0 );
-		this.camera.position.set( 4.6, 1.7, 5.2 );
+		this.camera.position.set( 4.2, 1.3, 5.3 );
 		this.controls.target.set( 0, 0.6, 0 );
 
 	}
@@ -278,11 +272,14 @@ export function carStats( id ) {
 
 	const c = CARS[ id ];
 	const peak = c.engine.torque.reduce( ( m, [ rpm, t ] ) => Math.max( m, ( t * rpm ) / 7127 ), 0 );
+	const clamp01 = ( v ) => Math.max( 0.05, Math.min( 1, v ) );
 	return {
 		name: c.name, code: c.code, years: c.years, blurb: c.blurb,
-		power: Math.round( peak ), mass: c.mass, layout: 'FR · RHD · Pop-ups',
-		engine: c.engine.type === 'rotary' ? '13B-REW twin-turbo rotary' : '4A-GE 1.6 twin-cam I4',
-		redline: c.engine.redline
+		power: Math.round( peak ), mass: c.mass, layout: `FR · RHD · ${c.popup ? 'Pop-ups' : 'Projectors'}`,
+		engine: c.engine.label, redline: c.engine.redline,
+		// 0..1 bars for the vehicle-select spec panel
+		powerBar: clamp01( peak / 300 ), weightBar: clamp01( c.mass / 1400 ),
+		driftBar: clamp01( c.ratings?.drift ?? 0.7 ), gripBar: clamp01( c.ratings?.grip ?? 0.7 )
 	};
 
 }

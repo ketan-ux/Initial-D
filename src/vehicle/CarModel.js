@@ -332,7 +332,13 @@ export class CarModel {
 		}
 
 		// spoiler
-		if ( spec.spoiler === 'wing' ) {
+		if ( spec.spoiler === 'trunk' ) {
+
+			// notchback: ducktail lip on the trunk lid edge
+			const sp = secAt( L - 0.1 );
+			bodyB.addGeometry( box( 1.3, 0.04, 0.16 ), m( 0, sp.yCenter + 0.025, this.zOf( L - 0.12 ), 0.2 ), sw( 'black' ) );
+
+		} else if ( spec.spoiler === 'wing' ) {
 
 			const sp = secAt( L - 0.25 );
 			for ( const s of [ 1, - 1 ] ) bodyB.addGeometry( box( 0.05, 0.16, 0.1 ), m( s * 0.55, sp.yCenter + 0.08, this.zOf( L - 0.22 ) ), sw( 'black' ) );
@@ -385,8 +391,44 @@ export class CarModel {
 
 	}
 
+	// Fixed projector headlamps (S13): slim lenses in the nose fascia either
+	// side of a narrow grille. Same glow kind as the pop-up lenses.
+	_buildFixedLamps() {
+
+		const spec = this.spec, hl = spec.headlamps;
+		const [ , w1, , , ybelt, yEdge ] = interpKeys( spec.loft, 0.03 );
+		const zF = this.zOf( 0.035 );
+		const y = ( ybelt + yEdge ) / 2 - 0.01;
+		const b = new GeoBuilder( { color: true, glow: true } );
+		for ( const s of [ 1, - 1 ] ) {
+
+			const x = s * Math.min( hl.x, w1 - hl.w / 2 - 0.02 );
+			b.setColor( 0x15141a ).setGlow( 0 );
+			b.addGeometry( new THREE.BoxGeometry( hl.w + 0.03, hl.h + 0.03, 0.05 ), new THREE.Matrix4().makeTranslation( x, y, zF - 0.01 ) );
+			b.setColor( 0xfff4d6 ).setGlow( 4 );
+			b.addGeometry( new THREE.BoxGeometry( hl.w * 0.55, hl.h, 0.05 ), new THREE.Matrix4().makeTranslation( x + s * hl.w * 0.18, y, zF + 0.005 ) );
+			b.addGeometry( new THREE.BoxGeometry( hl.w * 0.3, hl.h * 0.8, 0.05 ), new THREE.Matrix4().makeTranslation( x - s * hl.w * 0.28, y, zF + 0.004 ) );
+
+		}
+
+		this.chassis.add( new THREE.Mesh( b.build(), this.lightMaterial ) );
+		this.popups = new THREE.Group(); // keeps update() uniform for both lamp types
+		this.chassis.add( this.popups );
+		this.popupClosed = 0;
+		this.headAnchors = [ 1, - 1 ].map( ( s ) => {
+
+			const o = new THREE.Object3D();
+			o.position.set( s * hl.x, y, zF + 0.04 );
+			this.chassis.add( o );
+			return o;
+
+		} );
+
+	}
+
 	_buildPopups() {
 
+		if ( ! this.spec.popup ) return this._buildFixedLamps();
 		const spec = this.spec, pu = spec.popup;
 		const sec = this.sections.reduce( ( a, s ) => ( Math.abs( s.f - pu.f - pu.d ) < Math.abs( a.f - pu.f - pu.d ) ? s : a ), this.sections[ 0 ] );
 		// hood surface height at the pod's lateral position, front and rear edge
@@ -462,7 +504,7 @@ export class CarModel {
 		b.addGeometry( tyre, null );
 		// brake disc (glows when hot)
 		const disc = new THREE.CylinderGeometry( r * 0.62, r * 0.62, 0.025, 18 ).rotateZ( Math.PI / 2 );
-		b.setColor( 0xff5a1a ).setGlow( 1 );
+		b.setColor( 0x4d4a55 ).setGlow( 1 ); // steel; glows orange when hot
 		b.addGeometry( disc, new THREE.Matrix4().makeTranslation( - w * 0.18, 0, 0 ) );
 		b.setGlow( 0 );
 		// rim face + spokes
@@ -471,11 +513,11 @@ export class CarModel {
 		b.addGeometry( face, new THREE.Matrix4().makeTranslation( w * 0.42, 0, 0 ) );
 		const hub = new THREE.CylinderGeometry( r * 0.16, r * 0.18, 0.06, 10 ).rotateZ( Math.PI / 2 );
 		b.addGeometry( hub, new THREE.Matrix4().makeTranslation( w * 0.42, 0, 0 ) );
-		const spokes = spec.rimStyle === 'spoke5' ? 5 : 8;
+		const spokes = { spoke5: 5, spoke6: 6 }[ spec.rimStyle ] ?? 8;
 		for ( let i = 0; i < spokes; i ++ ) {
 
 			const a = ( i / spokes ) * Math.PI * 2;
-			const sp = new THREE.BoxGeometry( 0.03, r * 0.5, spokes === 5 ? 0.07 : 0.035 );
+			const sp = new THREE.BoxGeometry( 0.03, r * 0.5, spokes <= 6 ? 0.07 : 0.035 );
 			const mm = new THREE.Matrix4().makeRotationX( a ).premultiply( new THREE.Matrix4().makeTranslation( w * 0.44, 0, 0 ) )
 				.multiply( new THREE.Matrix4().makeTranslation( 0, r * 0.38, 0 ) );
 			b.addGeometry( sp, mm );
@@ -572,8 +614,12 @@ export class CarModel {
 		}
 
 		const e = this.popupAngle * this.popupAngle * ( 3 - 2 * this.popupAngle );
-		this.popups.rotation.x = - this.popupClosed - e * 1.15;
-		this.uniforms.head.value = e > 0.7 ? ( e - 0.7 ) / 0.3 * 1.0 : 0;
+		if ( this.spec.popup ) {
+
+			this.popups.rotation.x = - this.popupClosed - e * 1.15;
+			this.uniforms.head.value = e > 0.7 ? ( e - 0.7 ) / 0.3 * 1.0 : 0;
+
+		} else this.uniforms.head.value = this.popupTarget; // fixed lamps switch instantly
 		if ( state ) {
 
 			this.steer = state.steerAngle ?? 0;

@@ -52,8 +52,16 @@ export class MiniMap {
 		ctx.translate( - ccx, - ccz );
 
 		const t = this.track;
-		const lw = 12 / scale * ( follow ? 0.5 : 0.6 ) + 6;
+		const lw = ( 12 / scale * ( follow ? 0.5 : 0.6 ) + 6 ) * ( o.lineScale ?? 1 );
 		ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+		if ( o.outline ) {
+
+			ctx.strokeStyle = o.outline;
+			ctx.lineWidth = lw * 2.1;
+			this._path( ctx );
+			ctx.stroke();
+
+		}
 		if ( o.glow ) {
 
 			ctx.strokeStyle = o.glow;
@@ -82,7 +90,7 @@ export class MiniMap {
 			ctx.save();
 			ctx.translate( c.x, c.z );
 			ctx.rotate( - c.heading );
-			const s = ( c.me ? 9 : 7 ) / scale * 2.2;
+			const s = ( c.me ? 11 : 8 ) / scale * 2.2 * ( o.lineScale ?? 1 );
 			ctx.fillStyle = c.color;
 			ctx.strokeStyle = '#0d0a14';
 			ctx.lineWidth = s * 0.25;

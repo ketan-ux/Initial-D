@@ -99,9 +99,10 @@ function drawPlate( ctx, spec ) {
 	ctx.fillStyle = '#1f5a2c';
 	ctx.textAlign = 'center';
 	ctx.font = `700 ${h * 0.3}px ${JP_FONT}`;
-	ctx.fillText( spec.id === 'ae86' ? '峠 503 と' : '峠 300 な', x + w / 2, y + h * 0.36 );
+	const plate = { ae86: [ '峠 503 と', '86-01' ], fd3s: [ '峠 300 な', '7-77' ], s13: [ '峠 330 さ', '13-13' ] }[ spec.id ] ?? [ '峠 500 あ', '00-01' ];
+	ctx.fillText( plate[ 0 ], x + w / 2, y + h * 0.36 );
 	ctx.font = `800 ${h * 0.46}px ${JP_FONT}`;
-	ctx.fillText( spec.id === 'ae86' ? '86-01' : '7-77', x + w / 2, y + h * 0.84 );
+	ctx.fillText( plate[ 1 ], x + w / 2, y + h * 0.84 );
 
 }
 
@@ -200,6 +201,18 @@ function petals( ctx, o, count, colors, region = 'sides', seed = 3 ) {
 
 }
 
+// Dark hood panel on the top view (optionally with a faint carbon weave).
+function hood( ctx, o, f0, f1, color, weave = false ) {
+
+	const x0 = o.top.x( f0 ), x1 = o.top.x( f1 );
+	const y0 = o.top.y( 0.6 ), y1 = o.top.y( - 0.6 );
+	fill( ctx, color, x0, y0, x1 - x0, y1 - y0 );
+	if ( ! weave ) return;
+	ctx.fillStyle = 'rgba(255,255,255,0.05)';
+	for ( let y = y0; y < y1; y += 8 ) for ( let x = x0 + ( ( y / 8 ) % 2 ) * 4; x < x1; x += 8 ) ctx.fillRect( x, y, 4, 4 );
+
+}
+
 const PAINTERS = {
 
 	panda( ctx, o ) {
@@ -218,6 +231,7 @@ const PAINTERS = {
 		sideText( ctx, o, '（自家用）', 2.25, 0.6, 17, '#141218', { font: JP_BRUSH, weight: 600 } );
 		sideText( ctx, o, 'TRUENO', 3.75, 0.66, 18, '#23202a', { weight: 900, font: 'Arial Black, sans-serif' } );
 		sideText( ctx, o, 'GT-APEX', 0.55, 0.42, 14, '#d9d6cc', { weight: 800, font: 'Arial, sans-serif' } );
+		hood( ctx, o, 0.04, o.spec.glass.windshield[ 0 ] - 0.02, '#141217', true );
 
 	},
 
@@ -286,6 +300,52 @@ const PAINTERS = {
 		ctx.beginPath(); ctx.arc( cx, cy, 52, 0, Math.PI * 2 ); ctx.fill();
 		ctx.fillStyle = '#2a1b4a';
 		ctx.beginPath(); ctx.arc( cx + 20, cy - 12, 48, 0, Math.PI * 2 ); ctx.fill();
+
+	},
+
+	sazanka( ctx, o ) {
+
+		// factory S13 two-tone: warm white over a dark grey lower body
+		twoTone( ctx, o, '#efece2', '#4a4852', 0.5 );
+		for ( const w of [ 'left', 'right' ] ) {
+
+			const sd = o.side( w );
+			fill( ctx, '#c8463c', 0, sd.y( 0.515 ), o.S, 4 );
+
+		}
+
+		sideText( ctx, o, '山茶花', 2.3, 0.66, 30, '#2a2730', { font: JP_BRUSH, weight: 800 } );
+		sideText( ctx, o, 'SAZANKA DRIFT CLUB', 2.3, 0.585, 12, '#2a2730', { weight: 800, font: 'Arial, sans-serif' } );
+		sideText( ctx, o, 'SILVIA', 4.0, 0.66, 16, '#3a3842', { weight: 900, font: 'Arial Black, sans-serif' } );
+		sideText( ctx, o, 'TURBO', 0.6, 0.4, 13, '#e6e3da', { weight: 900, font: 'Arial, sans-serif' } );
+
+	},
+
+	lime( ctx, o ) {
+
+		twoTone( ctx, o, '#a8d82e', '#8cbc1c', 0.34 );
+		sideStripe( ctx, o, 0.25, 4.25, 0.37, 0.41, '#121116', 0 );
+		sideText( ctx, o, '緑', 2.35, 0.6, 70, '#121116', { font: JP_BRUSH, weight: 900, stroke: '#e9ff9a', strokeWidth: 4 } );
+		sideText( ctx, o, 'MIDORI', 3.85, 0.66, 16, '#121116', { weight: 900, font: 'Arial Black, sans-serif' } );
+		hood( ctx, o, 0.04, o.spec.glass.windshield[ 0 ] - 0.02, '#16151b', true );
+
+	},
+
+	yozora( ctx, o ) {
+
+		twoTone( ctx, o, '#1d2b6b', '#121b48', 0.36 );
+		let seed = 21;
+		const rnd = () => ( ( seed = ( seed * 16807 ) % 2147483647 ) / 2147483647 );
+		ctx.fillStyle = '#dfe6ff';
+		for ( let i = 0; i < 260; i ++ ) {
+
+			const r = rnd() < 0.9 ? 1.5 : 3;
+			ctx.beginPath(); ctx.arc( rnd() * o.S, rnd() < 0.3 ? 512 + rnd() * 440 : rnd() * 512, r, 0, Math.PI * 2 ); ctx.fill();
+
+		}
+
+		sideStripe( ctx, o, 0.3, 4.2, 0.55, 0.57, '#c9d4ff', 0 );
+		sideText( ctx, o, '夜空', 2.35, 0.44, 38, '#e9eeff', { font: JP_BRUSH, weight: 900, stroke: '#3348a8', strokeWidth: 4 } );
 
 	}
 

@@ -27,9 +27,13 @@ import { TelemetryPanel, PhoneGPS } from '../ui/TelemetryPanel.js';
 import { Captions } from '../ui/Captions.js';
 import { Menus } from '../ui/Menus.js';
 import { VRMenu } from '../ui/VRMenu.js';
+import { SpeedLines } from '../ui/SpeedLines.js';
+import { TitleDemo } from '../modes/TitleDemo.js';
 
 const PHYS_DT = 1 / 120;
-const HUD_MODES = [ 'auto', 'windshield', 'slate', 'off' ];
+const HUD_MODES = [ 'auto', 'diegetic', 'windshield', 'slate', 'off' ];
+const HUD_NAMES = { auto: 'arcade', diegetic: 'diegetic only', windshield: 'windshield', slate: 'floating slate', off: 'off' };
+const REDUCED_MOTION = window.matchMedia?.( '(prefers-reduced-motion: reduce)' ).matches;
 const _v = new THREE.Vector3(), _f = new THREE.Vector3(), _u = new THREE.Vector3(), _q = new THREE.Quaternion();
 
 export class Game {
@@ -114,6 +118,7 @@ export class Game {
 		this.minimap = new MiniMap( this.track );
 		this.hud = new HUD( ui, this.minimap );
 		this.hud.show( false );
+		this.speedLines = new SpeedLines( ui );
 		this.captions = new Captions( ui );
 		this.telemetry = new TelemetryPanel( this.minimap );
 		this.vignette = new ComfortVignette();
@@ -126,6 +131,8 @@ export class Game {
 		this.ambience = new Ambience( audio );
 		this.menus.setProgress( 0.88, 'Opening the garage' );
 		this.garage = new Garage( this.rs, q );
+		this.demo = new TitleDemo( this.world, this.scene, q );
+		this.demo.start();
 
 		this._bindInput();
 		this._bindBus();
@@ -148,8 +155,11 @@ export class Game {
 		this.menus.setProgress( 1, 'Ready' );
 		const dev = `${q.name} preset · ${this.rs.backend} · ${this.vrSupported ? 'VR headset detected' : 'flatscreen'}`;
 		this.menus.loadingDone( this.vrSupported, dev );
-		this.state = 'title';
-		this.garage.enter();
+		this.toTitle();
+		// the first gesture anywhere unlocks Web Audio (ambience under the title)
+		const unlock = () => this._start();
+		window.addEventListener( 'pointerdown', unlock, { once: true } );
+		window.addEventListener( 'keydown', unlock, { once: true } );
 		renderer.setAnimationLoop( ( t, frame ) => this._loop( t, frame ) );
 		window.__game = this;
 		if ( this.params.has( 'noadapt' ) ) setSetting( 'adaptiveResolution', false );
@@ -172,11 +182,29 @@ export class Game {
 	_handlers() {
 
 		return {
-			start: () => this._start(),
-			enterVR: () => this._enterVR(),
+			titleAction: async ( act ) => {
+
+				audio.click();
+				if ( act === 'vr' ) return this._enterVR();
+				if ( act === 'settings' ) return this.menus.openSettings();
+				await this._start();
+				if ( act === 'battle' || act === 'timeattack' ) setSetting( 'mode', act );
+				this.toGarage( act );
+
+			},
+			selectCar: ( id ) => {
+
+				this.garage.setCar( id, settings.livery[ id ] ?? 0 ); audio.click(); this._garageVRMenu();
+
+			},
 			nextCar: ( d ) => {
 
 				this.garage.nextCar( d ); this.menus.refreshGarage(); audio.click(); this._garageVRMenu();
+
+			},
+			back: () => {
+
+				audio.click(); this.toTitle();
 
 			},
 			setLivery: ( i ) => {
@@ -219,8 +247,15 @@ export class Game {
 
 	async _start() {
 
-		if ( this.started ) return;
+		if ( this.started ) return this._starting;
 		this.started = true;
+		this._starting = this._initAudio();
+		return this._starting;
+
+	}
+
+	async _initAudio() {
+
 		try {
 
 			await audio.init( { hrtf: this.vrSupported || this.quality.key === 'high' } );
@@ -234,8 +269,6 @@ export class Game {
 		this.ambience.start();
 		this.ambience.setLevel( 1 );
 		this.radio.preload();
-		this.menus.show( 'loading', false );
-		this.toGarage();
 
 	}
 
@@ -261,14 +294,30 @@ export class Game {
 		const i = this.input;
 		i.on( 'pause', () => {
 
-			if ( this.state === 'race' ) this.setPaused( ! this.paused );
+			if ( this.menus.isOpen( 'confirm' ) ) this.menus.show( 'confirm', false );
+			else if ( this.state === 'race' ) this.setPaused( ! this.paused );
 			else if ( this.state === 'replay' ) this._replayCmd( 'exit' );
-			else if ( this.menus.isOpen( 'settings' ) ) this.menus.show( 'settings', false );
-			else if ( this.menus.isOpen( 'help' ) ) this.menus.show( 'help', false );
+			else this.menus.back();
 
 		} );
 		i.on( 'camera', () => this.toggleCamera() );
-		i.on( 'headlights', () => this.toggleHeadlights() );
+		i.on( 'headlights', () => {
+
+			if ( this.state === 'race' && ! this.paused ) this.toggleHeadlights();
+
+		} );
+		// gamepad menu navigation (d-pad / stick, A, B)
+		const menuMode = () => this.state !== 'race' || this.paused || !! this.menus.top();
+		i.on( 'menuUp', () => menuMode() && this.menus.nav( - 1 ) );
+		i.on( 'menuDown', () => menuMode() && this.menus.nav( 1 ) );
+		i.on( 'menuOk', () => menuMode() && this.menus.activate() );
+		i.on( 'menuBack', () => {
+
+			if ( ! menuMode() ) return;
+			if ( this.paused && this.menus.top() === 'pause' ) this.setPaused( false );
+			else this.menus.back();
+
+		} );
 		i.on( 'shiftUp', () => this._shift( 1 ) );
 		i.on( 'shiftDown', () => this._shift( - 1 ) );
 		i.on( 'reset', () => {
@@ -280,7 +329,7 @@ export class Game {
 
 			const n = HUD_MODES[ ( HUD_MODES.indexOf( settings.hudMode ) + 1 ) % HUD_MODES.length ];
 			setSetting( 'hudMode', n );
-			this.hud.toast( 'HUD: ' + { auto: 'diegetic', windshield: 'windshield', slate: 'floating slate', off: 'off' }[ n ] );
+			this.hud.toast( 'HUD: ' + HUD_NAMES[ n ] );
 			this._applyHud();
 
 		} );
@@ -294,8 +343,7 @@ export class Game {
 		} );
 		i.on( 'confirm', () => {
 
-			if ( this.state === 'title' && ! this.started ) this._start();
-			else if ( this.state === 'garage' && ! this.menus.isOpen( 'settings' ) && ! this.menus.isOpen( 'help' ) && document.activeElement?.tagName !== 'BUTTON' ) this.startRace();
+			if ( this.state === 'garage' && ! this.menus.isOpen( 'settings' ) && ! this.menus.isOpen( 'help' ) && document.activeElement?.tagName !== 'BUTTON' ) this.startRace();
 			else if ( this.state === 'race' && this.race?.phase === 'staging' ) this.race.beginCountdown();
 
 		} );
@@ -426,12 +474,42 @@ export class Game {
 	}
 
 	// --------------------------------------------------------------- states
-	toGarage() {
+	toTitle() {
 
 		this._endRace();
-		this.state = 'garage';
+		this.state = 'title';
 		this.menus.hideAll();
-		this.menus.refreshGarage( this.vrSupported );
+		this.menus.show( 'title' );
+		this.hud.show( false );
+		this.touch?.show( false );
+		this.garage.leave();
+		this.demo.start();
+		this.fx.clear();
+		this.camera.fov = 40;
+		this.camera.updateProjectionMatrix();
+		this.rs.setCamera( this.camera );
+		this.ambience.setLevel( 0.8 );
+
+	}
+
+	_leaveTitle() {
+
+		this.demo.stop();
+		this.demoAudio?.forEach( ( a ) => a.stop() );
+		this.demoAudio = null;
+		this.fx.clear();
+		this.speedLines.clear();
+
+	}
+
+	toGarage( mode ) {
+
+		this._endRace();
+		this._leaveTitle();
+		this.state = 'garage';
+		if ( mode ) this.garageMode = mode;
+		this.menus.hideAll();
+		this.menus.refreshGarage( this.garageMode || settings.mode, !! this.garage.headlights );
 		this.menus.show( 'garage' );
 		this.hud.show( false );
 		this.touch?.show( false );
@@ -450,6 +528,7 @@ export class Game {
 	startRace() {
 
 		this._endRace();
+		this._leaveTitle();
 		const carId = settings.car;
 		this.state = 'race';
 		this.paused = false;
@@ -465,7 +544,7 @@ export class Game {
 		this.captions.mount( this.cockpit );
 		this.captions.setVR( this.xrSession.presenting );
 		this.xrControls.setCockpit( this.cockpit, this.race.player.physics );
-		this.hud.setSpec( this.race.player.spec );
+		this.hud.setSpec( this.race.player.spec, this.track );
 		this.carAudio = this.race.cars.map( ( c ) => new CarAudio( audio, c, { isPlayer: c === this.race.player } ) );
 		this.fx.clear();
 		this.chase.init = false;
@@ -507,6 +586,7 @@ export class Game {
 		this._resetRig();
 		this.vrMenu.show( false );
 		this.xrControls.setPointerMode( false );
+		this.speedLines.clear();
 
 	}
 
@@ -598,17 +678,21 @@ export class Game {
 
 		if ( ! this.xrSession.presenting || this.state !== 'garage' ) return;
 		const id = settings.car, c = CARS[ id ];
-		this.vrMenu.set( `${c.code} · ${c.name}`, [
+		this.vrMenu.set( `${c.make} ${c.model}`, [
 			{ label: '▸ Drive to the summit', detail: settings.mode === 'battle' ? 'Battle vs rival' : 'Time attack', action: () => this.startRace() },
-			{ label: 'Next car', detail: c.code, action: () => this._handlers().nextCar( 1 ) },
+			{ label: 'Next car', detail: c.code, action: () => {
+
+				this.garage.nextCar( 1 ); this.menus.refreshGarage(); audio.click(); this._garageVRMenu();
+
+			} },
 			{ label: 'Livery', detail: c.liveries[ settings.livery[ id ] ?? 0 ].name, action: () => {
 
 				const n = ( ( settings.livery[ id ] ?? 0 ) + 1 ) % c.liveries.length; this.garage.setLivery( n ); this._garageVRMenu();
 
 			} },
-			{ label: 'Pop-up headlights', detail: this.garage.headlights ? 'UP' : 'DOWN', action: () => {
+			{ label: c.popup ? 'Pop-up headlights' : 'Headlights', detail: this.garage.headlights ? 'ON' : 'OFF', action: () => {
 
-				this._handlers().togglePopups(); this._garageVRMenu();
+				this.garage.toggleHeadlights(); this._popupSound(); this._garageVRMenu();
 
 			} },
 			{ label: 'Mode', detail: settings.mode === 'battle' ? 'Battle' : 'Time attack', action: () => {
@@ -828,7 +912,7 @@ export class Game {
 	// --------------------------------------------------------------- HUD
 	_showDomCountdown() {
 
-		return ! this.xrSession.presenting && ( this.cameraMode === 'chase' || settings.hudMode === 'slate' );
+		return ! this.xrSession.presenting && ( this.cameraMode === 'chase' || settings.hudMode === 'slate' || settings.hudMode === 'auto' );
 
 	}
 
@@ -842,11 +926,13 @@ export class Game {
 		if ( inRace && ! vr ) {
 
 			if ( ! fpp ) dom = mode !== 'off';
-			else dom = mode === 'slate';
+			else dom = mode === 'slate' || mode === 'auto';
 
 		}
 
 		this.hud.show( dom );
+		// arcade mode collapses to a compact needle tach while in the cockpit
+		this.hud.setCockpit( fpp && mode === 'auto' );
 		let panel = 'none';
 		if ( inRace && fpp ) {
 
@@ -908,7 +994,7 @@ export class Game {
 		car.setHeadlights( ! car.headlightsOn );
 		if ( ! fromCockpit ) this.cockpit?.pressButton( 'headlights' );
 		this._popupSound();
-		this.hud.toast( car.headlightsOn ? 'Pop-ups up' : 'Lights off — risky!' );
+		this.hud.toast( car.headlightsOn ? ( car.spec.popup ? 'Pop-ups up' : 'Lights on' ) : 'Lights off — risky!' );
 
 	}
 
@@ -932,7 +1018,11 @@ export class Game {
 		this.xrControls.update( dt );
 		if ( this.vrMenu.mesh.visible ) this.vrMenu.updateHover( this.xrControls.hands.map( ( h ) => h.ray ) );
 
-		if ( this.state === 'garage' || this.state === 'title' ) {
+		if ( this.state === 'title' ) {
+
+			this._titleFrame( dt );
+
+		} else if ( this.state === 'garage' ) {
 
 			uTime.value += dt;
 			this.garage.update( dt );
@@ -960,6 +1050,28 @@ export class Game {
 			this.hud.debug( `${Math.round( this.fps )} fps · ${info.drawCalls} draws · ${( info.triangles / 1000 ).toFixed( 0 )}k tris · ${this.quality.name} · ${this.rs.backend} · pr ${this.rs.pixelRatio.toFixed( 2 )}${this.xrInfo ? ` · XR multiview ${this.xrInfo.multiview ? 'ON' : 'off'}` : ''}` );
 
 		} else this.hud.debug( '' );
+
+	}
+
+	_titleFrame( dt ) {
+
+		uTime.value += dt;
+		const drift = this.demo.update( dt, this.camera );
+		this.fx.beginFrame();
+		for ( const c of this.demo.cars ) this.fx.emitForCar( c, dt );
+		this.fx.endFrame();
+		this.camera.getWorldPosition( _v );
+		this.petals.update( _v, this.demo.cars.map( ( c ) => ( { x: c.physics.x, y: c.physics.y, z: c.physics.z, vx: c.physics.vx, vz: c.physics.vz, drift: c.telemetry.drift } ) ) );
+		this.world.update( dt, _v, this.camera.far );
+		// engines of the battling cars once audio is unlocked (quiet under the menu)
+		if ( audio.ready && ! this.demoAudio && ! this.xrSession.presenting ) this.demoAudio = this.demo.cars.map( ( c ) => new CarAudio( audio, c, { isPlayer: false } ) );
+		this._listener( this.camera );
+		this.demoAudio?.forEach( ( a ) => a.update( dt, _v.clone(), 1 ) );
+		this.ambience.update( dt );
+		this.vignette.update( dt, 0, 0, 0, false );
+		if ( ! REDUCED_MOTION ) this.speedLines.set( this.demo.shot === 'front' || this.demo.shot === 'rear' ? 0.25 + drift * 0.3 : 0 );
+		this.speedLines.update( dt );
+		this.rs.render( this.scene, this.camera, drift * 0.5 );
 
 	}
 
@@ -1077,6 +1189,12 @@ export class Game {
 		}
 
 		this.hud.update( dt, hd );
+		// manga speed lines at speed / mid-drift (flatscreen chase + arcade cockpit)
+		const kmh = race.player.physics.speed * 3.6;
+		const lines = this.paused || this.xrSession.presenting || REDUCED_MOTION ? 0
+			: clamp( ( kmh - 95 ) / 80, 0, 1 ) * 0.55 + clamp( tel.drift - 0.4, 0, 1 ) * 0.5;
+		this.speedLines.set( this.cameraMode === 'chase' ? lines : lines * 0.5, 0.5, this.cameraMode === 'chase' ? 0.5 : 0.42 );
+		this.speedLines.update( dt );
 		this.telemetry.update( dt, hd );
 		this.phone.update( dt, hd );
 
