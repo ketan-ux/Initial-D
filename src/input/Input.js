@@ -142,7 +142,7 @@ export class Input extends Emitter {
 		if ( this.device === 'keyboard' ) {
 
 			const target = ( this._held( 'left' ) ? 1 : 0 ) - ( this._held( 'right' ) ? 1 : 0 );
-			const rate = target === 0 ? 6 : ( Math.sign( target ) !== Math.sign( this.kbSteer ) && this.kbSteer !== 0 ? 9 : 3.6 );
+			const rate = target === 0 ? 7 : ( Math.sign( target ) !== Math.sign( this.kbSteer ) && this.kbSteer !== 0 ? 10 : 5 );
 			this.kbSteer += clamp( target - this.kbSteer, - rate * dt, rate * dt );
 			s.steer = this.kbSteer;
 			s.throttle = this._held( 'throttle' ) ? 1 : 0;

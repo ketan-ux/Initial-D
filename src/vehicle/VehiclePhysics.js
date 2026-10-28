@@ -204,8 +204,13 @@ export class VehiclePhysics {
 
 		} else {
 
-			// digital input: speed-sensitive lock for stability
-			lock = lock / ( 1 + Math.max( 0, speed - 8 ) / 22 );
+			// digital input (keys / touch): full steer = the angle that puts the
+			// front tyres at peak grip for this speed — tightest grip-limited
+			// circle (Ackermann angle for R = v^2 / mu g) plus peak slip (~0.15
+			// rad). More lock than that only scrubs speed (understeer).
+			const v2 = Math.max( speed * speed, 1 );
+			const peakLock = Math.atan( spec.wheelbase * spec.grip * G / v2 ) + 0.15;
+			lock = Math.min( lock, peakLock );
 			steerTarget = clamp( c.steer, - 1, 1 ) * lock;
 
 		}
@@ -249,6 +254,8 @@ export class VehiclePhysics {
 		let torque = torqueAt( eng, Math.min( engineRpm, eng.limiter ) ) * throttle;
 		if ( this.limiterHit ) torque = ( Math.random() < 0.5 ) ? 0 : torque * 0.3;
 		if ( this.shiftTimer > 0 || this.gear === 0 ) torque = 0;
+		// reverse is a manoeuvring gear: governed to ~28 km/h
+		if ( this.gear === - 1 ) torque *= clamp( ( 7.8 + vLong ) / 2, 0, 1 );
 		// engine braking off-throttle
 		const engineBrake = this.gear !== 0 && this.shiftTimer === 0 ? ( 1 - throttle ) * ( engineRpm / eng.redline ) * 26 : 0;
 		const driveDir = this.gear === - 1 ? - 1 : 1;
@@ -392,6 +399,11 @@ export class VehiclePhysics {
 				if ( this.reverseTimer > 0.45 && this.gear !== - 1 ) {
 
 					this.gear = - 1; this.events.push( { type: 'shift', dir: - 1, gear: - 1 } );
+					this.reverseTimer = 0;
+					// the pedal swap only applies from the next step: returning here
+					// stops the exit check below reading the held brake as "accelerate"
+					// and cancelling reverse in the same tick
+					return;
 
 				}
 

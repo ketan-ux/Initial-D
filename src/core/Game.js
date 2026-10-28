@@ -3,7 +3,7 @@ import { RenderSystem } from './renderer.js';
 import { applyPreset, quality, isMobile } from './quality.js';
 import { settings, setSetting, progress } from './settings.js';
 import { bus } from './events.js';
-import { clamp, damp, lerp } from './math.js';
+import { clamp, damp, lerp, wrapAngle } from './math.js';
 import { World } from '../world/World.js';
 import { uTime } from '../render/toon.js';
 import { Petals, LAYER_NO_MIRROR } from '../fx/Petals.js';
@@ -865,7 +865,8 @@ export class Game {
 			// look into corners with yaw rate / steering, and glance back on demand
 			// small bias toward the centre console (RHD: to the left) keeps the
 			// phone GPS and cup in frame; look into corners on top of that
-			const want = 0.07 + clamp( p.yawRate * 0.22 + p.steerAngle * 0.25, - 0.35, 0.35 ) + ( this.input.lookBack ? Math.PI : 0 );
+			const fwd = p.gear !== - 1;
+			const want = 0.07 + ( fwd ? clamp( p.yawRate * 0.12 + p.steerAngle * 0.15, - 0.22, 0.22 ) : 0 ) + ( this.input.lookBack ? Math.PI : 0 );
 			this.lookYaw = damp( this.lookYaw, want, 6, dt );
 			this.rig.rotation.set( 0, Math.PI + this.lookYaw, 0 );
 			const sh = this._shakeAmount( dt );
@@ -879,9 +880,14 @@ export class Game {
 
 		} else {
 
-			const heading = Math.atan2( p.vx, p.vz );
 			const speed = p.speed;
-			const camHeading = speed > 3 ? lerp( p.heading, heading, 0.45 ) : p.heading;
+			// sit behind the car's nose; lean a little toward the slide when
+			// moving forward. The blend is done on the wrapped angle difference
+			// (a plain lerp across +-PI swung the camera to the wrong side), and
+			// never when reversing, so the car always backs toward the camera.
+			const vLong = p.vx * Math.sin( p.heading ) + p.vz * Math.cos( p.heading );
+			let camHeading = p.heading;
+			if ( speed > 3 && vLong > 1 ) camHeading += clamp( wrapAngle( Math.atan2( p.vx, p.vz ) - p.heading ) * 0.45, - 0.5, 0.5 );
 			_f.set( Math.sin( camHeading ), 0, Math.cos( camHeading ) );
 			if ( this.input.lookBack ) _f.negate();
 			// tight, low chase framing like the reference: the car fills the lower third
