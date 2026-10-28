@@ -1,4 +1,5 @@
 import * as THREE from 'three/webgpu';
+import { liveCanvasTexture } from '../render/textures.js';
 import { emissiveMaterial } from '../render/toon.js';
 import { C, SKEW, font, fontsReady, drawCard, drawPlate, drawKey, inkText, fitText } from './theme.js';
 
@@ -34,8 +35,7 @@ export class VRMenu {
 		this.canvas.width = 1024; this.canvas.height = 1024;
 		this.width = width;
 		this.usedH = 0;
-		this.tex = new THREE.CanvasTexture( this.canvas );
-		this.tex.colorSpace = THREE.NoColorSpace;
+		this.tex = liveCanvasTexture( this.canvas );
 		// Opaque panel (alpha-tested corners) drawn after the cabin with an
 		// always-passing depth test, so the dashboard or a pillar can never hide
 		// it. It still writes depth (a disabled depth test would not), so glass,

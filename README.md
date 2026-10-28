@@ -169,8 +169,16 @@ flatscreens.
     in shuffled order, so VR draws a prefix with `drawRange` and drops most
     of the forest behind them (no rebuild, still one draw call per chunk)
   - terrain switches to its coarse level sooner
-  - no headlight shadow pass, slower and shorter mirrors, fewer petals, no
-    ink outlines
+  - lite lighting: every lit toon material is swapped for its unlit twin
+    (the Low preset's baked toon ramp). Per-pixel lights were the biggest
+    cost, because the cockpit fills most of each eye. The headlight
+    spotlights are swapped for the road light-pool decal.
+  - static mirror glass (a mirror re-renders the whole scene, which showed
+    up as a periodic frame spike), few petals, no ink outlines
+  - live canvas textures (glass HUD, phone, menus, captions) skip mipmaps.
+    The HUD canvas is a third of the size and re-uploads only when its
+    contents change, at 8 Hz (phone at 4 Hz). This was the single biggest
+    win in profiling.
   - a governor steps down through four levels (to 100 m, with roadside
     trees thinned too) when the headset misses its frame rate, and back up
     when there's headroom

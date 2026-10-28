@@ -1,4 +1,5 @@
 import * as THREE from 'three/webgpu';
+import { liveCanvasTexture } from '../render/textures.js';
 import { bus } from '../core/events.js';
 import { settings } from '../core/settings.js';
 import { emissiveMaterial } from '../render/toon.js';
@@ -19,8 +20,7 @@ export class Captions {
 		this.el = el;
 		this.canvas = document.createElement( 'canvas' );
 		this.canvas.width = 1024; this.canvas.height = 160;
-		this.tex = new THREE.CanvasTexture( this.canvas );
-		this.tex.colorSpace = THREE.NoColorSpace;
+		this.tex = liveCanvasTexture( this.canvas );
 		const mat = emissiveMaterial( 0xffffff, 1.0, { transparent: true, depthWrite: false } );
 		mat.map = this.tex;
 		this.mesh = new THREE.Mesh( new THREE.PlaneGeometry( 0.5, 0.078 ), mat );

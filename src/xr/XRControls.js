@@ -1,4 +1,5 @@
 import * as THREE from 'three/webgpu';
+import { liveCanvasTexture } from '../render/textures.js';
 import { clamp, wrapAngle } from '../core/math.js';
 import { toonMaterial } from '../render/toon.js';
 import { settings } from '../core/settings.js';
@@ -667,8 +668,7 @@ class HelpCard {
 
 		this.canvas = document.createElement( 'canvas' );
 		this.canvas.width = 512; this.canvas.height = 288;
-		this.tex = new THREE.CanvasTexture( this.canvas );
-		this.tex.colorSpace = THREE.NoColorSpace;
+		this.tex = liveCanvasTexture( this.canvas );
 		// same draw rules as the menu panel: never hidden by the cabin, but the
 		// hands draw over it
 		const mat = new THREE.MeshBasicNodeMaterial( { map: this.tex, alphaTest: 0.5, side: THREE.DoubleSide } );

@@ -5,7 +5,7 @@ import { settings, setSetting, progress } from './settings.js';
 import { bus } from './events.js';
 import { clamp, damp, lerp, wrapAngle } from './math.js';
 import { World } from '../world/World.js';
-import { uTime, LAYER_OUTLINE } from '../render/toon.js';
+import { uTime, LAYER_OUTLINE, setToonLighting } from '../render/toon.js';
 import { MistRing } from '../render/MistRing.js';
 import { Petals, LAYER_NO_MIRROR } from '../fx/Petals.js';
 import { FX } from '../fx/Particles.js';
@@ -39,13 +39,14 @@ const _v = new THREE.Vector3(), _f = new THREE.Vector3(), _u = new THREE.Vector3
 // VR performance levels. Stereo doubles every draw, so VR always runs a lean,
 // race-first profile: a short draw distance hidden in mountain mist plus a
 // painted silhouette ring, roadside trees only (the forest behind them is
-// dropped), coarse terrain LOD sooner, no headlight shadow pass, slower/
-// shorter mirrors, fewer petals and no ink outlines. The governor steps down
+// dropped), unlit toon materials, coarse terrain LOD sooner, no headlight
+// lights, static mirror glass (a mirror re-renders the whole scene, which
+// landed as a periodic frame spike), few petals and no ink outlines. The governor steps down
 // a level whenever the headset misses its frame rate.
 const VR_LEVELS = [
-	{ far: 170, fog: 0.0095, lod: 130, near: 1, farTrees: 0.12, mirrorRate: 3, mirrorFar: 80, petals: 0.4 },
-	{ far: 145, fog: 0.011, lod: 110, near: 1, farTrees: 0, mirrorRate: 4, mirrorFar: 60, petals: 0.25 },
-	{ far: 120, fog: 0.0135, lod: 90, near: 0.6, farTrees: 0, mirrorRate: 6, mirrorFar: 45, petals: 0.1 },
+	{ far: 170, fog: 0.0095, lod: 130, near: 1, farTrees: 0.12, mirrorRate: 0, mirrorFar: 70, petals: 0.15 },
+	{ far: 145, fog: 0.011, lod: 110, near: 1, farTrees: 0, mirrorRate: 0, mirrorFar: 50, petals: 0.08 },
+	{ far: 120, fog: 0.0135, lod: 90, near: 0.6, farTrees: 0, mirrorRate: 0, mirrorFar: 45, petals: 0 },
 	{ far: 100, fog: 0.016, lod: 70, near: 0.35, farTrees: 0, mirrorRate: 0, mirrorFar: 35, petals: 0 }
 ];
 
@@ -737,12 +738,27 @@ export class Game {
 
 		}
 
-		// headlight shadow map: stop re-rendering it and fade it out (uniforms
-		// only, so no shader rebuild mid-session)
-		for ( const c of this.race?.cars ?? [] ) for ( const s of c.spots ?? [] ) if ( s.castShadow ) {
+		// VR lite lighting: unlit toon twins everywhere (per-pixel lights were the
+		// biggest cost: the cockpit fills most of each eye), headlight spots off
+		// (their glow stays as the light-pool decal on the road)
+		if ( this._liteOn !== on || on ) {
 
-			s.shadow.autoUpdate = ! on;
-			s.shadow.intensity = on ? 0 : 1;
+			setToonLighting( this.scene, on );
+			if ( this.garage ) setToonLighting( this.garage.scene, on );
+			this._liteOn = on;
+
+		}
+
+		for ( const c of this.race?.cars ?? [] ) {
+
+			for ( const s of c.spots ?? [] ) {
+
+				s.visible = ! on;
+				if ( s.castShadow ) s.shadow.autoUpdate = ! on;
+
+			}
+
+			if ( c.pool && c.spots?.length ) c.pool.visible = on;
 
 		}
 
@@ -1461,6 +1477,9 @@ export class Game {
 			: clamp( ( kmh - 80 ) / 70, 0, 1 ) * 0.6 + clamp( tel.drift - 0.35, 0, 1 ) * 0.6;
 		this.speedLines.set( this.cameraMode === 'chase' ? lines : lines * 0.5, 0.5, this.cameraMode === 'chase' ? 0.5 : 0.42 );
 		this.speedLines.update( dt );
+		// VR: fewer canvas uploads (each one stalls a mobile GPU a little)
+		this.telemetry.rate = this.xrSession.presenting ? 8 : null;
+		this.phone.rate = this.xrSession.presenting ? 4 : null;
 		this.telemetry.update( dt, hd );
 		this.phone.update( dt, hd );
 

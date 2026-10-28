@@ -132,6 +132,7 @@ export function toonMaterial( opts = {} ) {
 	}
 
 	mat.fog = opts.fog ?? true;
+	mat.userData.toonOpts = opts; // lets setToonLighting() build an unlit twin
 	return mat;
 
 }
@@ -168,6 +169,56 @@ export function outlineMaterial( thickness = 0.022, hex = 0x140c1c ) {
 	mat.fog = true;
 	outlineCache.set( key, mat );
 	return mat;
+
+}
+
+// VR lite lighting: per-pixel lights are the frame-rate killer in stereo
+// (the cockpit alone fills most of each eye), so in VR every lit toon
+// material in `root` is swapped for its unlit twin: the same baked toon
+// ramp, rim and emissive the Low preset uses, with no light or shadow maths.
+// Twins are cached per material; unlit = false swaps the originals back.
+const _twins = new WeakMap();
+export function setToonLighting( root, unlit ) {
+
+	root.traverse( ( o ) => {
+
+		if ( ! o.isMesh ) return;
+		const m = o.material;
+		if ( unlit ) {
+
+			const opts = m?.userData?.toonOpts;
+			if ( ! opts || m.isMeshBasicNodeMaterial || m.userData.keepLit ) return;
+			let twin = _twins.get( m );
+			if ( ! twin ) {
+
+				twin = toonMaterial( { ...opts, unlit: true } );
+				twin.side = m.side;
+				twin.userData.litOriginal = m;
+				_twins.set( m, twin );
+
+			}
+
+			syncToonTwin( m );
+			o.material = twin;
+
+		} else if ( m?.userData?.litOriginal ) o.material = m.userData.litOriginal;
+
+	} );
+
+}
+
+// Carry a later map/colour change (e.g. a new livery) over to the twin.
+export function syncToonTwin( m ) {
+
+	const twin = _twins.get( m );
+	if ( ! twin ) return;
+	if ( twin.map !== m.map ) {
+
+		twin.map = m.map; twin.needsUpdate = true;
+
+	}
+
+	twin.color.copy( m.color );
 
 }
 

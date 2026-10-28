@@ -58,8 +58,9 @@ export class Car {
 		}
 
 		// Additive "light pool" decal: the only headlight cue on the Low preset
-		// (unlit toon) and the rival's cheap headlights elsewhere.
-		if ( count === 0 ) {
+		// (unlit toon), the rival's cheap headlights elsewhere, and the stand-in
+		// for the spotlights while VR runs its lite lighting.
+		{
 
 			poolTex = poolTex || createLightPool();
 			const mat = new THREE.MeshBasicNodeMaterial( {
@@ -72,6 +73,7 @@ export class Car {
 			this.pool = new THREE.Mesh( geo, mat );
 			this.pool.renderOrder = 3;
 			this.pool.name = 'lightPool';
+			this.pool.visible = count === 0;
 			this.root.add( this.pool );
 
 		}

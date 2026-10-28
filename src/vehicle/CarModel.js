@@ -4,7 +4,7 @@ import {
 	vertexColor, materialColor
 } from 'three/tsl';
 import { GeoBuilder } from '../render/GeoBuilder.js';
-import { toonMaterial, outlineMaterial, uRimColor, LAYER_OUTLINE } from '../render/toon.js';
+import { toonMaterial, outlineMaterial, uRimColor, LAYER_OUTLINE, syncToonTwin } from '../render/toon.js';
 import { paintLivery, SIDE_Y0, SIDE_Y1, TOP_V0, TOP_V1, PLATE_UV, SWATCH } from './liveries.js';
 import { createBlobShadow } from '../render/textures.js';
 import { clamp, lerp } from '../core/math.js';
@@ -71,6 +71,7 @@ export class CarModel {
 		this.livery = paintLivery( this.spec, index );
 		this.bodyMaterial.map = this.livery;
 		this.bodyMaterial.needsUpdate = true;
+		syncToonTwin( this.bodyMaterial ); // VR lite twin, if any
 		old?.dispose();
 
 	}
@@ -548,6 +549,7 @@ export class CarModel {
 		const extra = vec3( 1.0, 0.35, 0.05 ).mul( glow.max( 0 ) ).mul( heat ).mul( 2.2 )
 			.add( vec3( 0.32, 0.28, 0.36 ).mul( isTyre ).mul( this.uniforms.wear ) ); // worn rubber goes shiny grey
 		mat.emissiveNode = mat.emissiveNode ? mat.emissiveNode.add( extra ) : extra;
+		mat.userData.keepLit = true; // custom nodes; small on screen, so VR keeps it as is
 		this.wheelMaterial = mat;
 		const inst = new THREE.InstancedMesh( geo, mat, 4 );
 		inst.name = 'wheels';

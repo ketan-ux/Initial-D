@@ -1,4 +1,5 @@
 import * as THREE from 'three/webgpu';
+import { liveCanvasTexture } from '../render/textures.js';
 import { KMH, MPH, clamp } from '../core/math.js';
 import { settings } from '../core/settings.js';
 import { fmtTime } from './HUD.js';
@@ -14,10 +15,11 @@ export class TelemetryPanel {
 
 		this.minimap = minimap;
 		this.canvas = document.createElement( 'canvas' );
-		this.canvas.width = 768; this.canvas.height = 288;
+		// painted in a 768x288 layout, stored at 2/3 size: a third of the
+		// upload bandwidth, still sharp at HUD size
+		this.canvas.width = 512; this.canvas.height = 192;
 		this.ctx = this.canvas.getContext( '2d' );
-		this.tex = new THREE.CanvasTexture( this.canvas );
-		this.tex.colorSpace = THREE.NoColorSpace;
+		this.tex = liveCanvasTexture( this.canvas );
 		this.timer = 0;
 		// windshield projection: flat, additive cyan "HUD glass"
 		const wmat = emissiveMaterial( 0xffffff, 1.1, { transparent: true, additive: true, depthWrite: false } );
@@ -90,9 +92,14 @@ export class TelemetryPanel {
 		if ( ! this.windshield.visible && ! this.slate.visible ) return;
 		this.timer -= dt;
 		if ( this.timer > 0 ) return;
-		this.timer = 1 / 15;
+		this.timer = 1 / ( this.rate ?? 15 );
 		const ctx = this.ctx, W = 768, H = 288;
 		const tel = d.telemetry;
+		// re-upload only when something visible changed
+		const key = `${Math.round( tel.speed * 3.6 )}|${tel.gear}|${Math.round( tel.rpm / 300 )}|${d.position}|${( d.time ?? 0 ).toFixed( 1 )}|${d.gap?.toFixed( 1 )}|${d.countdown}`;
+		if ( key === this._key ) return;
+		this._key = key;
+		ctx.setTransform( 2 / 3, 0, 0, 2 / 3, 0, 0 );
 		ctx.clearRect( 0, 0, W, H );
 		// additive "HUD glass": black is transparent, so everything is light on
 		// nothing, in the same italic Kanit / slanted-plate language as the DOM HUD
@@ -187,7 +194,7 @@ export class PhoneGPS {
 
 		this.timer -= dt;
 		if ( this.timer > 0 ) return;
-		this.timer = 1 / 12;
+		this.timer = 1 / ( this.rate ?? 12 );
 		const c = this.cockpit.phoneCanvas, ctx = c.getContext( '2d' );
 		const W = c.width, H = c.height;
 		ctx.fillStyle = '#0b0a14';

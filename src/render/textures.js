@@ -359,3 +359,16 @@ export function createTextTexture( lines, opts = {} ) {
 }
 
 export { canvas as makeCanvas, finish as canvasToTexture };
+
+// Canvas texture that is re-uploaded while playing (HUD, phone, menus,
+// captions): no mipmaps, so an upload is one texSubImage2D and not a full
+// mip-chain rebuild every time it changes.
+export function liveCanvasTexture( canvas ) {
+
+	const t = new THREE.CanvasTexture( canvas );
+	t.colorSpace = THREE.NoColorSpace;
+	t.generateMipmaps = false;
+	t.minFilter = THREE.LinearFilter;
+	return t;
+
+}

@@ -1,4 +1,5 @@
 import * as THREE from 'three/webgpu';
+import { liveCanvasTexture } from '../render/textures.js';
 import { GeoBuilder } from '../render/GeoBuilder.js';
 import { toonMaterial, emissiveMaterial, addOutline } from '../render/toon.js';
 import { clamp, damp, KMH, MPH } from '../core/math.js';
@@ -273,8 +274,7 @@ export class Cockpit {
 		const e = this.eyePos;
 		this.gaugeCanvas = document.createElement( 'canvas' );
 		this.gaugeCanvas.width = 512; this.gaugeCanvas.height = 200;
-		this.gaugeTex = new THREE.CanvasTexture( this.gaugeCanvas );
-		this.gaugeTex.colorSpace = THREE.NoColorSpace;
+		this.gaugeTex = liveCanvasTexture( this.gaugeCanvas );
 		this.drawGaugeFace();
 		const W = 0.34, H = W * 200 / 512;
 		const face = new THREE.Mesh( new THREE.PlaneGeometry( W, H ), emissiveMaterial( 0xffffff, 1.0 ) );
@@ -552,8 +552,7 @@ export class Cockpit {
 		g.quaternion.copy( rot );
 		this.phoneCanvas = document.createElement( 'canvas' );
 		this.phoneCanvas.width = 340; this.phoneCanvas.height = 180;
-		this.phoneTex = new THREE.CanvasTexture( this.phoneCanvas );
-		this.phoneTex.colorSpace = THREE.NoColorSpace;
+		this.phoneTex = liveCanvasTexture( this.phoneCanvas );
 		const screenMat = emissiveMaterial( 0xffffff, 1.0 );
 		screenMat.map = this.phoneTex;
 		const screen = new THREE.Mesh( new THREE.PlaneGeometry( 0.156, 0.078 ), screenMat );
@@ -652,7 +651,11 @@ export class Cockpit {
 
 		const mounts = new THREE.Mesh( mb.build(), frameMat );
 		mounts.name = 'mirrorMounts';
-		this.group.add( mounts, new THREE.Mesh( gb.build(), mat ) );
+		this.mirrorGlass = new THREE.Mesh( gb.build(), mat );
+		this.mirrorLiveMat = mat;
+		this.mirrorStaticMat = new THREE.MeshBasicNodeMaterial( { color: 0x463a6e } );
+		this.mirrorStaticMat.fog = false;
+		this.group.add( mounts, this.mirrorGlass );
 		this._mirrorFrame = 0;
 
 	}
@@ -663,6 +666,7 @@ export class Cockpit {
 		if ( ! this.mirrorRT || ! this.group.visible ) return;
 		// VR overrides the rate (0 = frozen) to keep the extra scene pass cheap
 		const rate = this.mirrorRate ?? ( this.quality.mirrorRate || 1 );
+		this.mirrorGlass.material = rate === 0 ? this.mirrorStaticMat : this.mirrorLiveMat; // frozen glass looks broken
 		if ( rate === 0 || ( this._mirrorFrame ++ ) % rate !== 0 ) return;
 		// Binding a non-output render target makes the renderer use the mirror
 		// camera as a plain mono view, also while an XR session is presenting.
