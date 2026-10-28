@@ -135,6 +135,7 @@ kbd { display: inline-block; background: var(--paper); color: var(--ink); border
 .staging { left: 50%; top: calc(13% + 44px); transform: translateX(-50%); flex-direction: column; align-items: center; gap: 10px; text-align: center; }
 .st-title { font-size: 28px; }
 .st-msg { font-family: var(--display); font-style: italic; font-weight: 700; font-size: 15px; text-shadow: var(--ink-stroke); }
+.st-msg kbd { text-shadow: none; }
 
 /* pause / confirm / results / help / settings: comic cards */
 .pause, .confirm, .results, .help, .settings {

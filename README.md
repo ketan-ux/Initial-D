@@ -55,7 +55,7 @@ field (for example `?q.mirrors=0&q.petals=500`).
 
 | | Keyboard | Gamepad | Quest Touch Plus | Touch |
 |---|---|---|---|---|
-| Steer | A/D, ←/→ | Left stick | Grab the wheel rim (one or two hands, hand-over-hand) | Left pad / tilt |
+| Steer | A/D, ←/→ | Left stick | Grab the wheel rim (one or two hands, hand-over-hand), or either thumbstick with hands off the wheel | Left pad / tilt |
 | Throttle / brake | W/S, ↑/↓ | RT / LT | Right / left trigger | GAS / BRAKE |
 | Handbrake | Space | A | Pull the lever up (or hold B) | HB |
 | Shift | E / Q | RB / LB | Grab the shifter (sequential or H-pattern), slap, or A/X | + / − |
@@ -63,10 +63,19 @@ field (for example `?q.mirrors=0&q.petals=500`).
 | Pop-up headlights | H | D-pad ↑ | Press the dash switch | — |
 | HUD mode | U | View | Press the dash switch | — |
 | Pause | Esc / P | Start | Y | — |
+| Recenter seat | — | — | Left stick click | — |
 | Fullscreen | F or the ⛶ button | — | — | ⛶ button (top centre) |
 
 Menus work with the mouse, the keyboard (arrows and Enter), a gamepad
-(d-pad or stick, A to select, B to go back), touch, and VR laser pointers.
+(d-pad or stick, A to select, B to go back), touch, and VR laser pointers
+(trigger selects; A picks the top option).
+
+In VR the menu panel opens in front of wherever you're looking. If you look
+away it drifts back into view. Each controller carries a floating legend of
+its buttons. The legends show in menus, through the countdown, for a few
+seconds after the start, and after you unpause. Anything you can grab glows
+pink when your hand is close enough: the wheel rim, the shifter knob and the
+handbrake. During staging the wheel rim pulses until you take hold of it.
 
 ## Features
 
@@ -125,7 +134,7 @@ Menus work with the mouse, the keyboard (arrows and Enter), a gamepad
 | Lighting | Unlit toon ramp, light-pool decals | Toon lighting, headlight spot shadow | Toon lighting, cascaded moon shadows |
 | Post | — | — | Bloom, chromatic aberration, light shafts |
 | Mirrors | Static | 384 px, every 2nd frame | 768 px, every 2nd frame |
-| XR | — | Multiview, foveation, 72/90 Hz | — |
+| XR | — | Foveation, 72/90 Hz (multiview opt-in) | — |
 
 On top of the presets the renderer uses culling, chunked LODs and merged
 geometry everywhere. A road chunk and a terrain chunk each take one draw call.
@@ -136,9 +145,11 @@ flatscreens.
 
 ### WebXR details
 
-- The renderer is `WebGPURenderer({ forceWebGL: true, multiview: true })`.
-  With a WebXR Layers projection layer of `textureType: 'texture-array'`,
-  three.js renders both eyes in a single pass via `OVR_multiview2`.
+- The renderer is `WebGPURenderer({ forceWebGL: true })`, and it renders
+  through the standard `XRWebGLLayer`. On the Quest Browser, three.js's WebXR
+  Layers projection-layer path (with `OVR_multiview2` single-pass stereo)
+  drew the world upside down, left materials missing and the background
+  uncleared. That path is now opt-in with `?xrmultiview`.
 - It requests `local-floor` and `session.updateTargetFrameRate(90)`, falling
   back to 72.
 - Fixed foveated rendering is set with `renderer.xr.setFoveation`.

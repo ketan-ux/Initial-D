@@ -17,6 +17,8 @@ import { clamp } from './math.js';
  *   drift-driven chromatic aberration; cascaded moonlight shadows.
  * - Adaptive resolution keeps the frame inside the preset's budget.
  */
+export const XR_MULTIVIEW = new URLSearchParams( location.search ).has( 'xrmultiview' );
+
 export class RenderSystem {
 
 	constructor( quality ) {
@@ -42,7 +44,10 @@ export class RenderSystem {
 		const renderer = new THREE.WebGPURenderer( {
 			antialias: q.antialias,
 			forceWebGL: ! useWebGPU,
-			multiview: true, // OVR_multiview2 single-pass stereo when presenting in XR
+			// OVR_multiview2 single-pass stereo is opt-in (?xrmultiview): on Quest 3
+			// the multiview + projection-layer path dropped many materials and left
+			// the background uncleared. Standard two-view XR rendering is the default.
+			multiview: XR_MULTIVIEW,
 			powerPreference: 'high-performance',
 			alpha: false,
 			stencil: false

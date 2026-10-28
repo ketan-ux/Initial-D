@@ -3,6 +3,26 @@ import { emissiveMaterial } from '../render/toon.js';
 
 const _ray = new THREE.Raycaster();
 const _m = new THREE.Matrix4();
+const _hit = new THREE.Vector3();
+// true when this ray currently hits the panel (pick() filled _hit)
+const _hitValid = ( rayObj, mesh ) => {
+
+	_m.identity().extractRotation( rayObj.matrixWorld );
+	_ray.ray.origin.setFromMatrixPosition( rayObj.matrixWorld );
+	_ray.ray.direction.set( 0, 0, - 1 ).applyMatrix4( _m );
+	const h = _ray.intersectObject( mesh, false )[ 0 ];
+	if ( h ) _hit.copy( h.point );
+	return !! h;
+
+};
+
+// fillText that shrinks the font until the line fits maxW
+const fitText = ( ctx, text, x, y, maxW, size, weight ) => {
+
+	do ctx.font = `${weight} ${size}px Arial`; while ( ctx.measureText( text ).width > maxW && -- size > 12 );
+	ctx.fillText( text, x, y );
+
+};
 
 // World-anchored canvas menu for VR, operated with controller laser
 // pointers (trigger = select). Large targets, high contrast, one column.
@@ -16,9 +36,19 @@ export class VRMenu {
 		this.tex.colorSpace = THREE.NoColorSpace;
 		const mat = emissiveMaterial( 0xffffff, 1.0, { transparent: true, side: THREE.DoubleSide } );
 		mat.map = this.tex;
+		// always readable: drawn over the dashboard / pillars it may sit behind
+		mat.depthTest = false; mat.depthWrite = false;
 		this.mesh = new THREE.Mesh( new THREE.PlaneGeometry( width, height ), mat );
 		this.mesh.renderOrder = 40;
 		this.mesh.visible = false;
+		// pointer cursor: where the laser meets the panel
+		this.cursor = new THREE.Mesh( new THREE.RingGeometry( 0.008, 0.016, 20 ), emissiveMaterial( 0xff8fc0, 1.6, { side: THREE.DoubleSide, depthWrite: false } ) );
+		this.cursor.material.depthTest = false;
+		this.cursor.position.z = 0.003;
+		this.cursor.renderOrder = 41;
+		this.cursor.visible = false;
+		this.mesh.add( this.cursor );
+		this.height = height;
 		this.title = '';
 		this.subtitle = '';
 		this.items = [];
@@ -59,16 +89,20 @@ export class VRMenu {
 		ctx.fillText( this.title, 48, 36 );
 		if ( this.subtitle ) {
 
-			ctx.font = '500 28px Arial';
 			ctx.fillStyle = '#c9b8ff';
-			ctx.fillText( this.subtitle, 50, 104 );
+			fitText( ctx, this.subtitle, 50, 104, W - 100, 28, '500' );
 
 		}
 
 		const top = this.subtitle ? 156 : 124;
 		const n = this.items.length;
 		const gap = 14;
-		const bh = Math.min( 92, ( H - top - 36 - gap * ( n - 1 ) ) / Math.max( 1, n ) );
+		const foot = 64; // controller legend
+		const bh = Math.min( 92, ( H - top - foot - 20 - gap * ( n - 1 ) ) / Math.max( 1, n ) );
+		ctx.font = '700 26px Arial';
+		ctx.fillStyle = '#ffd166';
+		ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+		fitText( ctx, '◉ Point with either controller · TRIGGER selects · A = top option', 50, H - foot / 2 - 6, W - 100, 26, '700' );
 		this.rects = [];
 		this.items.forEach( ( it, i ) => {
 
@@ -99,7 +133,7 @@ export class VRMenu {
 	}
 
 	// Returns the hovered item index for a controller's target-ray space.
-	pick( rayObj ) {
+	pick( rayObj, out = null ) {
 
 		if ( ! this.mesh.visible ) return - 1;
 		_m.identity().extractRotation( rayObj.matrixWorld );
@@ -107,6 +141,7 @@ export class VRMenu {
 		_ray.ray.direction.set( 0, 0, - 1 ).applyMatrix4( _m );
 		const hit = _ray.intersectObject( this.mesh, false )[ 0 ];
 		if ( ! hit || ! hit.uv ) return - 1;
+		if ( out ) out.copy( hit.point );
 		const x = hit.uv.x * this.canvas.width, y = ( 1 - hit.uv.y ) * this.canvas.height;
 		return this.rects.findIndex( ( r ) => x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h );
 
@@ -114,13 +149,21 @@ export class VRMenu {
 
 	updateHover( rays ) {
 
-		let h = - 1;
+		let h = - 1, hitAny = false;
 		for ( const r of rays ) {
 
-			const i = this.pick( r );
+			const i = this.pick( r, _hit );
 			if ( i >= 0 ) h = i;
+			if ( _hitValid( r, this.mesh ) ) {
+
+				hitAny = true;
+				this.cursor.position.copy( this.mesh.worldToLocal( _hit.clone() ) ).setZ( 0.003 );
+
+			}
 
 		}
+
+		this.cursor.visible = hitAny;
 
 		if ( h !== this.hover ) {
 

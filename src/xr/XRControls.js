@@ -1,10 +1,11 @@
 import * as THREE from 'three/webgpu';
 import { clamp, wrapAngle } from '../core/math.js';
-import { toonMaterial } from '../render/toon.js';
+import { toonMaterial, emissiveMaterial } from '../render/toon.js';
 import { settings } from '../core/settings.js';
 import { bus } from '../core/events.js';
 
 const _v = new THREE.Vector3(), _w = new THREE.Vector3(), _q = new THREE.Quaternion();
+const _m4 = new THREE.Matrix4(), _up = new THREE.Vector3( 0, 1, 0 );
 
 // Meta Quest Touch (Plus) cockpit interactions:
 //  - physics-style steering wheel: grab the rim with either grip, one- or
@@ -31,7 +32,7 @@ export class XRControls {
 				index: i, grip, ray, source: null, handedness: 'none', glove: makeGlove(),
 				squeeze: 0, trigger: 0, wasSqueeze: false, prevButtons: [],
 				grabbing: null, grabAngle: 0, grabStart: new THREE.Vector3(), lastPos: new THREE.Vector3(), vel: new THREE.Vector3(),
-				shiftArmed: true, pressCooldown: 0, laser: makeLaser()
+				shiftArmed: true, pressCooldown: 0, laser: makeLaser(), card: new HelpCard()
 			};
 			grip.add( hand.glove );
 			ray.add( hand.laser );
@@ -39,7 +40,9 @@ export class XRControls {
 
 				hand.source = e.data;
 				hand.handedness = e.data.handedness;
+				// grip space: the back of the right hand faces +X, the left -X
 				hand.glove.scale.x = hand.handedness === 'left' ? - 1 : 1;
+				this._drawHelp();
 
 			} );
 			grip.addEventListener( 'disconnected', () => {
@@ -58,13 +61,35 @@ export class XRControls {
 		this.physics = null;
 		this.hapticClock = 0;
 		this.pointerMode = false; // menus: laser pointers instead of cabin interactions
+		this.pointerDrive = false; // staging: pointers AND pedals/wheel at once
 		this.onSelect = null;
+		this.onPrimary = null; // A button while a menu is up = its first option
+		this.helpMode = null; // 'drive' | 'menu' | null: floating button legends
+		this.helpTime = 0;
+		this.hintClock = 0;
 
 	}
 
 	attach( rig ) {
 
-		for ( const h of this.hands ) rig.add( h.grip, h.ray );
+		for ( const h of this.hands ) rig.add( h.grip, h.ray, h.card.mesh );
+
+	}
+
+	// Floating legends above each controller naming what every button does.
+	// seconds = how long to keep them up (Infinity = until changed).
+	showHelp( mode, seconds = Infinity ) {
+
+		this.helpTime = mode ? seconds : 0;
+		if ( mode === this.helpMode ) return;
+		this.helpMode = mode;
+		this._drawHelp();
+
+	}
+
+	_drawHelp() {
+
+		for ( const h of this.hands ) h.card.draw( h.handedness, this.helpMode, settings.vrShifter );
 
 	}
 
@@ -77,9 +102,10 @@ export class XRControls {
 
 	}
 
-	setPointerMode( on ) {
+	setPointerMode( on, drive = false ) {
 
 		this.pointerMode = on;
+		this.pointerDrive = on && drive;
 		for ( const h of this.hands ) h.laser.visible = on;
 
 	}
@@ -113,7 +139,7 @@ export class XRControls {
 	update( dt ) {
 
 		const presenting = this.renderer.xr.isPresenting;
-		this.state.active = presenting && ! this.pointerMode;
+		this.state.active = presenting && ( ! this.pointerMode || this.pointerDrive );
 		if ( ! presenting ) return;
 
 		let right = null, left = null;
@@ -127,54 +153,55 @@ export class XRControls {
 			h.lastPos.copy( _v );
 			h.pressCooldown = Math.max( 0, h.pressCooldown - dt );
 			if ( h.handedness === 'right' ) right = h; else if ( h.handedness === 'left' ) left = h;
-			// glove pose: curl fingers with grip/trigger
-			const curl = Math.max( h.squeeze, h.trigger * 0.6 );
-			h.glove.userData.fingers.rotation.x = curl * 1.3;
+			// glove pose: index follows the trigger, the other fingers the grip
+			const holding = h.grabbing ? 1 : h.squeeze;
+			h.glove.userData.pose( 0.25 + Math.max( h.trigger, holding * 0.6 ) * 0.75, 0.55 + holding * 0.45 );
 
 		}
 
-		// buttons (edge-triggered)
+		// buttons (edge-triggered). xr-standard mapping: 0 trigger, 1 grip,
+		// 3 stick click, 4 A/X, 5 B/Y
 		for ( const h of this.hands ) {
 
 			const gp = this._gp( h );
 			if ( ! gp ) continue;
-			const edge = ( i ) => {
+			const e = {};
+			for ( const i of [ 0, 3, 4, 5 ] ) {
 
 				const p = !! gp.buttons[ i ]?.pressed;
-				const e = p && ! h.prevButtons[ i ];
+				e[ i ] = p && ! h.prevButtons[ i ];
 				h.prevButtons[ i ] = p;
-				return e;
-
-			};
-
-			if ( this.pointerMode ) {
-
-				if ( edge( 0 ) ) this.onSelect?.( h );
-				edge( 4 ); edge( 5 );
-				if ( h.handedness === 'left' && gp.buttons[ 5 ]?.pressed ) this.input.emit( 'pause' );
-				continue;
 
 			}
 
+			if ( this.pointerMode && e[ 0 ] ) this.onSelect?.( h );
 			if ( h.handedness === 'right' ) {
 
-				if ( edge( 4 ) ) this.input.emit( 'shiftUp' ); // A
-				edge( 5 ); // B is held for handbrake (read below)
-				if ( edge( 3 ) ) this.input.emit( 'headlights' ); // stick click
+				if ( e[ 4 ] ) {
+
+					if ( this.pointerMode ) this.onPrimary?.(); else this.input.emit( 'shiftUp' ); // A
+
+				}
+
+				// B is held for the handbrake (read in _interact)
+				if ( e[ 3 ] && ! this.pointerMode ) this.input.emit( 'headlights' ); // stick click
 
 			} else {
 
-				if ( edge( 4 ) ) this.input.emit( 'shiftDown' ); // X
-				if ( edge( 5 ) ) this.input.emit( 'pause' ); // Y
-				if ( edge( 3 ) ) bus.emit( 'xr-recenter' ); // stick click
+				if ( e[ 4 ] && ! this.pointerMode ) this.input.emit( 'shiftDown' ); // X
+				if ( e[ 5 ] ) this.input.emit( 'pause' ); // Y
+				if ( e[ 3 ] ) bus.emit( 'xr-recenter' ); // stick click
 
 			}
 
 		}
 
-		if ( this.pointerMode || ! this.cockpit ) {
+		this._updateHelp( dt );
+
+		if ( ( this.pointerMode && ! this.pointerDrive ) || ! this.cockpit ) {
 
 			this.state.throttle = 0; this.state.brake = 0;
+			if ( this.cockpit ) for ( const k of [ 'wheel', 'shifter', 'handbrake' ] ) this.cockpit.setGrabHint( k, 0 );
 			return;
 
 		}
@@ -193,31 +220,45 @@ export class XRControls {
 
 		const ck = this.cockpit;
 		let hb = 0;
+		// signifiers: whatever a free hand could grab right now glows (pulsing)
+		this.hintClock += dt;
+		const near = { wheel: 0, shifter: 0, handbrake: 0 };
 		for ( const h of this.hands ) {
 
 			h.grip.getWorldPosition( _v );
 			const pressing = h.squeeze > 0.55;
+			// grab targets: wheel rim, shifter knob, handbrake grip
+			const wl = ck.wheel.worldToLocal( _v.clone() );
+			const radial = Math.abs( Math.hypot( wl.x, wl.y ) - ck.wheelRadius );
+			const knob = ck.shifter.localToWorld( ck.shifterKnobLocal.clone() );
+			const hbGrip = ck.handbrake.localToWorld( ck.handbrakeGripLocal.clone() );
+			const onRim = radial < 0.1 && Math.abs( wl.z ) < 0.13;
+			const onKnob = _v.distanceTo( knob ) < 0.11, onHb = _v.distanceTo( hbGrip ) < 0.13;
+			if ( ! h.grabbing && h.source ) {
+
+				if ( onRim ) near.wheel = 1;
+				else if ( onKnob ) near.shifter = 1;
+				else if ( onHb ) near.handbrake = 1;
+
+			}
+
 			if ( pressing && ! h.wasSqueeze ) {
 
 				// grab priority: wheel rim, shifter knob, handbrake grip
-				const wl = ck.wheel.worldToLocal( _v.clone() );
-				const radial = Math.abs( Math.hypot( wl.x, wl.y ) - ck.wheelRadius );
-				const knob = ck.shifter.localToWorld( ck.shifterKnobLocal.clone() );
-				const hbGrip = ck.handbrake.localToWorld( ck.handbrakeGripLocal.clone() );
-				if ( radial < 0.1 && Math.abs( wl.z ) < 0.13 ) {
+				if ( onRim ) {
 
 					h.grabbing = 'wheel';
 					h.grabAngle = Math.atan2( wl.y, wl.x );
 					this.pulse( h, 0.3, 25 );
 
-				} else if ( _v.distanceTo( knob ) < 0.11 ) {
+				} else if ( onKnob ) {
 
 					h.grabbing = 'shifter';
 					h.grabStart.copy( ck.shifter.worldToLocal( _v.clone() ) );
 					h.shiftArmed = true;
 					this.pulse( h, 0.25, 20 );
 
-				} else if ( _v.distanceTo( hbGrip ) < 0.13 ) {
+				} else if ( onHb ) {
 
 					h.grabbing = 'handbrake';
 					h.grabStart.copy( _v );
@@ -275,6 +316,13 @@ export class XRControls {
 			}
 
 		}
+
+		// nobody on the wheel yet (staging, or let go): a slow glow invites a grab
+		const free = ! this.hands.some( ( h ) => h.grabbing === 'wheel' );
+		const pulse = 0.55 + 0.45 * Math.sin( this.hintClock * 5 );
+		ck.setGrabHint( 'wheel', near.wheel ? pulse : ( free && this.helpMode === 'drive' ? 0.6 * pulse : 0 ) );
+		ck.setGrabHint( 'shifter', near.shifter * pulse );
+		ck.setGrabHint( 'handbrake', near.handbrake * pulse );
 
 		// B button = handbrake fallback
 		const right = this.hands.find( ( h ) => h.handedness === 'right' );
@@ -380,8 +428,15 @@ export class XRControls {
 
 			// released: self-aligning torque returns the wheel toward the
 			// direction of travel (it spins into countersteer during slides)
-			const right = this.hands.find( ( h ) => h.handedness === 'right' );
-			const stick = right?.source?.gamepad?.axes[ 2 ] ?? 0;
+			// either thumbstick steers while no hand holds the wheel
+			let stick = 0;
+			for ( const h of this.hands ) {
+
+				const ax = h.source?.gamepad?.axes[ 2 ] ?? 0;
+				if ( Math.abs( ax ) > Math.abs( stick ) ) stick = ax;
+
+			}
+
 			let target;
 			if ( Math.abs( stick ) > 0.15 ) target = - stick * range * 0.8;
 			else {
@@ -438,6 +493,31 @@ export class XRControls {
 
 	}
 
+	// Legends float ~11 cm above each controller and turn to face the head.
+	_updateHelp( dt ) {
+
+		if ( this.helpMode && this.helpTime !== Infinity ) {
+
+			this.helpTime -= dt;
+			if ( this.helpTime <= 0 ) this.showHelp( null );
+
+		}
+
+		const cam = this.renderer.xr.getCamera();
+		_w.setFromMatrixPosition( cam.matrixWorld );
+		for ( const h of this.hands ) {
+
+			const card = h.card.mesh;
+			card.visible = !! ( this.helpMode && h.source && h.card.rows && h.glove.visible );
+			if ( ! card.visible || ! card.parent ) continue;
+			h.grip.getWorldPosition( _v ).y += 0.11;
+			card.position.copy( card.parent.worldToLocal( _v ) );
+			card.lookAt( _w );
+
+		}
+
+	}
+
 	setVisible( v ) {
 
 		for ( const h of this.hands ) h.glove.visible = v;
@@ -446,32 +526,169 @@ export class XRControls {
 
 }
 
-// Stylised toon racing glove (palm + curling fingers + thumb).
-function makeGlove() {
+// Stylised toon racing glove, modelled in WebXR grip space (right hand;
+// the left is mirrored with scale.x = -1): the fist wraps a rod along Z with
+// the thumb at -Z, the back of the hand faces +X and the wrist sits toward
+// +Y. Fingers are one InstancedMesh of capsule phalanges re-posed each frame,
+// so a hand costs three draw calls.
+const FINGERS = [ // z of the knuckle, phalanx lengths
+	{ z: - 0.029, len: [ 0.036, 0.026, 0.021 ] }, // index (trigger)
+	{ z: - 0.01, len: [ 0.038, 0.028, 0.022 ] },
+	{ z: 0.009, len: [ 0.036, 0.026, 0.021 ] },
+	{ z: 0.027, len: [ 0.03, 0.022, 0.018 ] } // pinky
+];
+const PHALANX_R = 0.0092;
+const _p = new THREE.Vector3(), _d = new THREE.Vector3(), _s = new THREE.Vector3();
+
+export function makeGlove() {
 
 	const g = new THREE.Group();
-	const mat = toonMaterial( { color: 0x23212b, rim: 0.5 } );
+	const mat = toonMaterial( { color: 0x2a2833, rim: 0.5 } );
 	const accent = toonMaterial( { color: 0xd8354f, rim: 0.3 } );
-	const palm = new THREE.Mesh( new THREE.BoxGeometry( 0.075, 0.03, 0.09 ), mat );
-	palm.position.set( 0, - 0.01, 0.02 );
-	const cuff = new THREE.Mesh( new THREE.CylinderGeometry( 0.035, 0.04, 0.05, 10 ).rotateX( Math.PI / 2 ), accent );
-	cuff.position.set( 0, - 0.01, 0.085 );
-	const fingers = new THREE.Group();
-	fingers.position.set( 0, - 0.01, - 0.025 );
-	for ( let i = 0; i < 4; i ++ ) {
+	// back of the hand + padded palm heel behind the rod
+	const back = new THREE.SphereGeometry( 1, 14, 10 ).scale( 0.016, 0.045, 0.047 ).translate( 0.03, 0.03, 0 );
+	const heel = new THREE.SphereGeometry( 1, 12, 8 ).scale( 0.024, 0.03, 0.04 ).translate( 0.01, 0.05, 0.004 );
+	const knuckles = new THREE.CapsuleGeometry( 0.012, 0.056, 3, 8 ).rotateX( Math.PI / 2 ).translate( 0.031, - 0.004, - 0.001 );
+	const palm = new THREE.Mesh( mergeGeos( [ back, heel, knuckles ] ), mat );
+	// slim red band at the wrist (the forearm leaves toward +Y, a little +Z)
+	const cuff = new THREE.Mesh( new THREE.CylinderGeometry( 0.024, 0.026, 0.016, 12 ).scale( 0.8, 1, 1.25 ).translate( 0.018, 0.078, 0.006 ), accent );
+	// 4 fingers x 3 phalanges + 2 thumb segments
+	const seg = new THREE.CapsuleGeometry( PHALANX_R, 0.01, 3, 6 ); // along Y
+	const fingers = new THREE.InstancedMesh( seg, mat, FINGERS.length * 3 + 2 );
+	fingers.frustumCulled = false;
+	g.add( palm, cuff, fingers );
 
-		const f = new THREE.Mesh( new THREE.BoxGeometry( 0.016, 0.02, 0.06 ), mat );
-		f.position.set( - 0.027 + i * 0.018, 0, - 0.03 );
-		fingers.add( f );
+	const put = ( k, from, dir, len ) => {
+
+		_p.copy( from ).addScaledVector( dir, len / 2 );
+		_q.setFromUnitVectors( _up, dir );
+		_s.set( 1, len / ( 0.01 + PHALANX_R * 2 ), 1 );
+		fingers.setMatrixAt( k, _m4.compose( _p, _q, _s ) );
+		from.addScaledVector( dir, len );
+
+	};
+
+	// index = 0 open … 1 fully curled; rest = the other three fingers
+	g.userData.pose = ( index, rest ) => {
+
+		let k = 0;
+		FINGERS.forEach( ( f, fi ) => {
+
+			const c = fi === 0 ? index : rest;
+			// a chain wrapping a ~3 cm circle: per-joint bend grows with the curl
+			const bend = 0.3 + c * 0.75;
+			let a = - 0.26 - bend / 2; // direction angle: (sin a, -cos a) in XY
+			const from = _w.set( 0.031, - 0.006, f.z );
+			for ( const len of f.len ) {
+
+				put( k ++, from, _d.set( Math.sin( a ), - Math.cos( a ), 0 ), len );
+				a -= bend;
+
+			}
+
+		} );
+		// thumb: from the palm side over the top of the fist, onto the stick
+		const from = _w.set( 0.0, 0.02, - 0.036 );
+		put( k ++, from, _d.set( - 0.55, - 0.35, - 0.76 ).normalize(), 0.03 );
+		put( k ++, from, _d.set( - 0.25, - 0.65, - 0.72 ).normalize(), 0.024 );
+		fingers.instanceMatrix.needsUpdate = true;
+
+	};
+
+	g.userData.pose( 0.3, 0.6 );
+	return g;
+
+}
+
+function mergeGeos( geos ) {
+
+	// tiny non-indexed merge (position/normal/uv) for the static glove parts
+	const parts = geos.map( ( geo ) => ( geo.index ? geo.toNonIndexed() : geo ) );
+	const out = new THREE.BufferGeometry();
+	for ( const name of [ 'position', 'normal', 'uv' ] ) {
+
+		const size = parts[ 0 ].attributes[ name ].itemSize;
+		const arr = new Float32Array( parts.reduce( ( n, p ) => n + p.attributes[ name ].array.length, 0 ) );
+		let o = 0;
+		for ( const p of parts ) {
+
+			arr.set( p.attributes[ name ].array, o ); o += p.attributes[ name ].array.length;
+
+		}
+
+		out.setAttribute( name, new THREE.BufferAttribute( arr, size ) );
 
 	}
 
-	const thumb = new THREE.Mesh( new THREE.BoxGeometry( 0.018, 0.02, 0.05 ), mat );
-	thumb.position.set( 0.045, - 0.005, 0.0 );
-	thumb.rotation.y = - 0.6;
-	g.add( palm, cuff, fingers, thumb );
-	g.userData.fingers = fingers;
-	return g;
+	return out;
+
+}
+
+// Small billboard legend that floats above a controller and lists what each
+// physical button does in the current context.
+const HELP = {
+	drive: {
+		right: [ [ 'TRIGGER', 'gas' ], [ 'GRIP', 'grab wheel / lever' ], [ 'A', 'shift up' ], [ 'B', 'handbrake' ], [ 'STICK', 'steer (hands off wheel)' ] ],
+		left: [ [ 'TRIGGER', 'brake / reverse' ], [ 'GRIP', 'grab wheel / lever' ], [ 'X', 'shift down' ], [ 'Y', 'pause' ], [ 'STICK', 'steer · click: recenter' ] ]
+	},
+	menu: {
+		right: [ [ 'POINT', 'aim at the panel' ], [ 'TRIGGER', 'select' ], [ 'A', 'top option' ] ],
+		left: [ [ 'POINT', 'aim at the panel' ], [ 'TRIGGER', 'select' ], [ 'Y', 'pause / resume' ], [ 'STICK', 'click: recenter' ] ]
+	}
+};
+
+class HelpCard {
+
+	constructor() {
+
+		this.canvas = document.createElement( 'canvas' );
+		this.canvas.width = 512; this.canvas.height = 288;
+		this.tex = new THREE.CanvasTexture( this.canvas );
+		this.tex.colorSpace = THREE.NoColorSpace;
+		const mat = emissiveMaterial( 0xffffff, 1.0, { transparent: true, depthWrite: false, side: THREE.DoubleSide } );
+		mat.map = this.tex;
+		mat.depthTest = false;
+		this.mesh = new THREE.Mesh( new THREE.PlaneGeometry( 0.2, 0.1125 ), mat );
+		this.mesh.renderOrder = 42;
+		this.mesh.visible = false;
+
+	}
+
+	draw( handedness, mode, shifter ) {
+
+		const rows = HELP[ mode ]?.[ handedness ];
+		this.rows = rows;
+		if ( ! rows ) return;
+		const c = this.canvas, ctx = c.getContext( '2d' ), W = c.width, H = c.height;
+		ctx.clearRect( 0, 0, W, H );
+		ctx.fillStyle = 'rgba(16,10,30,0.88)';
+		ctx.beginPath(); ctx.roundRect( 4, 4, W - 8, H - 8, 28 ); ctx.fill();
+		ctx.strokeStyle = '#ffd166'; ctx.lineWidth = 4; ctx.stroke();
+		ctx.fillStyle = '#ffd166';
+		ctx.font = '800 26px Arial';
+		ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+		ctx.fillText( handedness === 'left' ? 'LEFT CONTROLLER' : 'RIGHT CONTROLLER', 26, 30 );
+		const rh = ( H - 66 ) / rows.length;
+		rows.forEach( ( [ key, what ], i ) => {
+
+			const y = 62 + rh * ( i + 0.5 );
+			ctx.fillStyle = '#ff8fc0';
+			ctx.beginPath(); ctx.roundRect( 18, y - rh * 0.42, 136, rh * 0.84, 12 ); ctx.fill();
+			ctx.fillStyle = '#1a0f24';
+			ctx.font = `900 ${Math.round( Math.min( rh * 0.5, 30 ) )}px Arial`;
+			ctx.textAlign = 'center';
+			ctx.fillText( key, 86, y + 1 );
+			ctx.fillStyle = '#ffffff';
+			ctx.textAlign = 'left';
+			const label = key === 'GRIP' && shifter === 'hpattern' ? 'grab wheel / H-shifter' : what;
+			let size = Math.round( Math.min( rh * 0.6, 38 ) );
+			do ctx.font = `700 ${size}px Arial`; while ( ctx.measureText( label ).width > W - 190 && -- size > 14 );
+			ctx.fillText( label, 168, y + 1 );
+
+		} );
+		this.tex.needsUpdate = true;
+
+	}
 
 }
 

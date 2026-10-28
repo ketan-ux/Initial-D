@@ -44,6 +44,7 @@ export class Cockpit {
 		this.gaugeRpm = 0; this.gaugeSpeed = 0;
 		this.hazard = false;
 		this._build();
+		this._buildGrabHints();
 
 	}
 
@@ -672,6 +673,37 @@ export class Cockpit {
 		renderer.setRenderTarget( this.mirrorRT );
 		renderer.render( scene, this.mirrorCam );
 		renderer.setRenderTarget( prev );
+
+	}
+
+	// VR grab signifiers: a soft pink glow on whatever a hand can grab now.
+	// Hidden meshes cost no draw calls, so these are free outside VR.
+	_buildGrabHints() {
+
+		const mk = ( geo, parent, pos ) => {
+
+			const m = new THREE.Mesh( geo, emissiveMaterial( 0xff8fc0, 1.5, { transparent: true, opacity: 0.5, depthWrite: false } ) );
+			if ( pos ) m.position.copy( pos );
+			m.visible = false;
+			m.renderOrder = 5;
+			parent.add( m );
+			return m;
+
+		};
+
+		this.grabHints = {
+			wheel: mk( new THREE.TorusGeometry( this.wheelRadius, 0.028, 8, 48 ), this.wheelSpin ),
+			shifter: mk( new THREE.SphereGeometry( 0.04, 14, 10 ), this.shifterLever, this.shifterKnobLocal ),
+			handbrake: mk( new THREE.CylinderGeometry( 0.027, 0.027, 0.13, 10 ).rotateX( Math.PI / 2 ), this.handbrake, this.handbrakeGripLocal )
+		};
+
+	}
+
+	setGrabHint( name, level ) {
+
+		const m = this.grabHints[ name ];
+		m.visible = level > 0.01;
+		m.material.opacity = level * 0.55;
 
 	}
 

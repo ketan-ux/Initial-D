@@ -10,5 +10,45 @@ const dev = new XRDevice( metaQuest3 );
 dev.installRuntime( { forceInstall: true, polyfillLayers: new URLSearchParams( location.search ).has( 'layers' ) } );
 dev.position.set( 0, 1.15, 0 ); // seated head height
 window.__xrdev = dev;
+// IWER's XRWebGLLayer reports a null framebuffer (= the canvas), which the
+// three.js WebGL backend cannot bind, so nothing rendered under emulation.
+// Give the layer a real offscreen framebuffer and expose a snapshot of it,
+// so tests can see exactly what each eye of the headset sees.
+const proto = globalThis.XRWebGLLayer.prototype;
+Object.defineProperty( proto, 'framebuffer', { get() {
+
+	if ( ! this.__fb ) {
+
+		const gl = this.context, w = gl.drawingBufferWidth, h = gl.drawingBufferHeight;
+		const fb = gl.createFramebuffer(), col = gl.createRenderbuffer(), dep = gl.createRenderbuffer();
+		gl.bindRenderbuffer( gl.RENDERBUFFER, col ); gl.renderbufferStorage( gl.RENDERBUFFER, gl.RGBA8, w, h );
+		gl.bindRenderbuffer( gl.RENDERBUFFER, dep ); gl.renderbufferStorage( gl.RENDERBUFFER, gl.DEPTH24_STENCIL8, w, h );
+		gl.bindFramebuffer( gl.FRAMEBUFFER, fb );
+		gl.framebufferRenderbuffer( gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.RENDERBUFFER, col );
+		gl.framebufferRenderbuffer( gl.FRAMEBUFFER, gl.DEPTH_STENCIL_ATTACHMENT, gl.RENDERBUFFER, dep );
+		gl.bindFramebuffer( gl.FRAMEBUFFER, null );
+		this.__fb = fb; this.__w = w; this.__h = h;
+		window.__xrLayer = this;
+
+	}
+
+	return this.__fb;
+
+} } );
+window.__xrSnap = () => {
+
+	const L = window.__xrLayer; if ( ! L ) return null;
+	const gl = L.context, w = L.__w, h = L.__h, px = new Uint8Array( w * h * 4 );
+	const prev = gl.getParameter( gl.FRAMEBUFFER_BINDING );
+	gl.bindFramebuffer( gl.FRAMEBUFFER, L.__fb );
+	gl.readPixels( 0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px );
+	gl.bindFramebuffer( gl.FRAMEBUFFER, prev );
+	const c = document.createElement( 'canvas' ); c.width = w; c.height = h;
+	const ctx = c.getContext( '2d' ), img = ctx.createImageData( w, h );
+	for ( let y = 0; y < h; y ++ ) img.data.set( px.subarray( ( h - 1 - y ) * w * 4, ( h - y ) * w * 4 ), y * w * 4 ); // flip rows
+	ctx.putImageData( img, 0, 0 );
+	return c.toDataURL( 'image/png' );
+
+};
 await import( '/src/main.js' );
 </script></body></html>

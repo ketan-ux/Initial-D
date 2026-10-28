@@ -1,9 +1,10 @@
 import { bus } from '../core/events.js';
+import { XR_MULTIVIEW } from '../core/renderer.js';
 
-// Immersive-VR session lifecycle. Requests the WebXR Layers feature, which
-// lets the Three.js XR manager allocate a texture-array projection layer and
-// render both eyes in one pass via OVR_multiview2; applies fixed foveation
-// and picks the Quest 3's 90 Hz (or 72 Hz) refresh rate.
+// Immersive-VR session lifecycle: local-floor space, fixed foveation, the
+// Quest 3's 90 Hz (or 72 Hz) refresh rate. Rendering uses the standard
+// XRWebGLLayer path; WebXR Layers + OVR_multiview2 single-pass stereo is an
+// opt-in experiment (?xrmultiview).
 export class XRSessionManager {
 
 	constructor( renderer, quality ) {
@@ -35,9 +36,17 @@ export class XRSessionManager {
 	async enter() {
 
 		if ( this.session ) return;
-		const init = { optionalFeatures: [ 'local-floor', 'bounded-floor', 'layers', 'hand-tracking' ] };
+		// 'layers' (projection-layer path) only with the multiview experiment;
+		// the default is the plain XRWebGLLayer path, which renders everything
+		const init = { optionalFeatures: [ 'local-floor', 'bounded-floor', ...( XR_MULTIVIEW ? [ 'layers' ] : [] ), 'hand-tracking' ] };
 		const session = await navigator.xr.requestSession( 'immersive-vr', init );
 		const xr = this.renderer.xr;
+		// three.js takes the projection-layer path whenever the browser exposes
+		// XRWebGLBinding.createProjectionLayer (Quest does), regardless of the
+		// requested features. That path (clearOnAccess: false + texture arrays)
+		// is what broke on device, so steer it onto XRWebGLLayer unless the
+		// multiview experiment is on.
+		if ( ! XR_MULTIVIEW && '_supportsLayers' in xr ) xr._supportsLayers = false;
 		xr.setReferenceSpaceType( 'local-floor' );
 		xr.setFoveation( this.quality.foveation ?? 1 );
 		await xr.setSession( session );

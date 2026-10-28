@@ -79,18 +79,15 @@ const grab = await page.evaluate( async () => {
 
 } );
 console.log( 'wheel grab', JSON.stringify( grab ) );
-// throttle via right trigger once racing
-for ( let i = 0; i < 9; i ++ ) {
-
-	await page.waitForTimeout( 1000 );
-	console.log( 'tick', i, JSON.stringify( await page.evaluate( () => ( { state: window.__game.state, race: !! window.__game.race, phase: window.__game.race?.phase, paused: window.__game.paused } ) ) ) );
-
-}
+// throttle via right trigger once racing (the emulated stereo render is
+// slow under SwiftShader, so wait on the phase rather than wall time)
+await page.waitForFunction( () => window.__game.race?.phase === 'race', null, { timeout: 120000, polling: 500 } ).catch( () => {} );
+console.log( 'phase', JSON.stringify( await page.evaluate( () => ( { state: window.__game.state, phase: window.__game.race?.phase, help: window.__game.xrControls.helpMode, pointer: window.__game.xrControls.pointerMode } ) ) ) );
 const drive = await page.evaluate( async () => {
 
 	const g = window.__game, dev = window.__xrdev;
 	dev.controllers.right.updateButtonValue( 'trigger', 1 );
-	await new Promise( ( r ) => setTimeout( r, 3000 ) );
+	await new Promise( ( r ) => setTimeout( r, 8000 ) );
 	const p = g.race.player.physics;
 	return { phase: g.race.phase, throttle: g.input.state.throttle, speed: +( p.speed * 3.6 ).toFixed( 1 ), steer: +p.steerAngle.toFixed( 3 ), vignette: +g.vignette.level.toFixed( 2 ), dc: g.rs.renderer.info.render.drawCalls };
 

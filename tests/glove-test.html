@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Glove test</title></head>
+<body style="margin:0;background:#334">
+<script type="module">
+// Renders the VR gloves in WebXR grip space around a stand-in controller
+// handle (rod along Z, thumb end at -Z) from a few angles.
+import * as THREE from 'three/webgpu';
+import { makeGlove } from '/src/xr/XRControls.js';
+const r = new THREE.WebGPURenderer( { forceWebGL: true, antialias: true } );
+r.setSize( 900, 300 ); document.body.appendChild( r.domElement );
+await r.init();
+const scene = new THREE.Scene(); scene.background = new THREE.Color( 0x8890a8 );
+scene.add( new THREE.HemisphereLight( 0xffffff, 0x445, 2 ), new THREE.DirectionalLight( 0xffffff, 2 ) );
+const curl = +( new URLSearchParams( location.search ).get( 'curl' ) ?? 0.6 );
+for ( const side of [ - 1, 1 ] ) {
+
+	const grip = new THREE.Group(); grip.position.x = side * 0.09;
+	const g = makeGlove(); g.scale.x = side; g.userData.pose( curl, curl ); grip.add( g );
+	const rod = new THREE.Mesh( new THREE.CylinderGeometry( 0.018, 0.018, 0.12 ).rotateX( Math.PI / 2 ), new THREE.MeshStandardNodeMaterial( { color: 0x66ccff } ) );
+	const axes = new THREE.AxesHelper( 0.06 ); // x red, y green, z blue
+	grip.add( rod, axes ); scene.add( grip );
+
+}
+const cam = new THREE.PerspectiveCamera( 40, 1, 0.01, 5 );
+const views = { front: [ 0, 0.05, - 0.45 ], side: [ 0.45, 0.05, 0 ], top: [ 0, 0.45, 0.02 ] };
+r.setScissorTest( true );
+let i = 0;
+for ( const [ k, p ] of Object.entries( views ) ) {
+
+	cam.position.set( ...p ); cam.lookAt( 0, 0, 0 );
+	r.setViewport( i * 300, 0, 300, 300 ); r.setScissor( i * 300, 0, 300, 300 );
+	r.render( scene, cam ); i ++;
+
+}
+window.__done = true;
+</script></body></html>

@@ -134,6 +134,8 @@ export class Game {
 		this.xrControls = new XRControls( renderer, this.input );
 		this.xrControls.attach( this.rig );
 		this.xrControls.onSelect = ( h ) => this.vrMenu.select( h.ray );
+		// A on the right controller = the open menu's first (primary) option
+		this.xrControls.onPrimary = () => this.vrMenu.mesh.visible && this.vrMenu.items[ 0 ]?.action?.();
 		this.vrMenu = new VRMenu();
 		this.radio = new Radio( audio );
 		this.ambience = new Ambience( audio );
@@ -304,6 +306,8 @@ export class Game {
 		const i = this.input;
 		i.on( 'pause', () => {
 
+			// VR Y button: only meaningful in a race (menus elsewhere have Back items)
+			if ( this.xrSession.presenting && this.state !== 'race' ) return;
 			if ( this.menus.isOpen( 'confirm' ) ) this.menus.show( 'confirm', false );
 			else if ( this.menus.page ) this.menus.closePage();
 			else if ( this.state === 'race' ) this.setPaused( ! this.paused );
@@ -391,8 +395,7 @@ export class Game {
 
 			this.cockpit?.setVR( false );
 			this.captions.setVR( false );
-			this.vrMenu.show( false );
-			this.xrControls.setPointerMode( false );
+			this._hideVRMenu();
 			if ( this.state === 'garage' ) {
 
 				this.garage.exitVR();
@@ -414,7 +417,13 @@ export class Game {
 			this.countdownTimer = n > 0 ? 1 : 1.2;
 			if ( this._showDomCountdown() ) this.hud.countdown( this.countdownText, n > 0 ? '' : 'go' );
 			if ( n === 3 ) this.menus.show( 'staging', false );
-			if ( this.xrSession.presenting ) this.vrMenu.show( false ), this.xrControls.setPointerMode( false );
+			if ( this.xrSession.presenting ) {
+
+				this._hideVRMenu();
+				// keep the button legends up through the lights and a few seconds after
+				this.xrControls.showHelp( 'drive', n > 0 ? Infinity : 8 );
+
+			}
 
 		} );
 		bus.on( 'race-phase', ( p ) => {
@@ -597,8 +606,7 @@ export class Game {
 		}
 
 		this._resetRig();
-		this.vrMenu.show( false );
-		this.xrControls.setPointerMode( false );
+		this._hideVRMenu();
 		this.speedLines.clear();
 
 	}
@@ -670,7 +678,8 @@ export class Game {
 
 			if ( p ) this._pauseVRMenu(); else {
 
-				this.vrMenu.show( false ); this.xrControls.setPointerMode( false );
+				this._hideVRMenu();
+				this.xrControls.showHelp( 'drive', 4 );
 
 			}
 
@@ -679,13 +688,96 @@ export class Game {
 	}
 
 	// --------------------------------------------------------------- VR menus
-	_placeVRMenu( parent, pos, rotY = 0 ) {
+	// Menus spawn in front of wherever the player is looking (1.1 m ahead,
+	// a little below eye level, turned to face them) inside `parent`, so they
+	// ride along with the garage or the car. Placement waits a few frames for
+	// a valid head pose; the panel drifts back into view if you look away.
+	_placeVRMenu( parent, dist = 1.1, drive = false ) {
 
+		this.xrControls.setPointerMode( true, drive );
+		this.xrControls.showHelp( drive ? 'drive' : 'menu' );
+		// a refresh of the open menu (Next car, Livery…) keeps it where it is
+		if ( this._menuWanted && this._menuParent === parent && this.vrMenu.mesh.visible ) return;
+		this._menuDist = dist;
 		parent.add( this.vrMenu.mesh );
-		this.vrMenu.mesh.position.copy( pos );
-		this.vrMenu.mesh.rotation.set( 0, rotY, 0 );
-		this.vrMenu.show( true );
-		this.xrControls.setPointerMode( true );
+		this._menuParent = parent;
+		this._menuPlaceIn = 0.12; // seconds: let the head pose settle first
+		this._menuAway = 0;
+		this.vrMenu.mesh.visible = false;
+		this._menuWanted = true;
+
+	}
+
+	_headPose( pos, fwd ) {
+
+		const cam = this.rs.renderer.xr.getCamera();
+		cam.matrixWorld.decompose( pos, _q, _u );
+		fwd.set( 0, 0, - 1 ).applyQuaternion( _q );
+		fwd.y = 0;
+		if ( fwd.lengthSq() < 1e-4 ) fwd.set( 0, 0, - 1 );
+		fwd.normalize();
+
+	}
+
+	_menuToHead() {
+
+		const m = this.vrMenu.mesh, parent = this._menuParent;
+		const head = new THREE.Vector3(), fwd = new THREE.Vector3();
+		this._headPose( head, fwd );
+		const target = head.clone().addScaledVector( fwd, this._menuDist ?? 1.1 );
+		target.y -= 0.1 * ( this._menuDist ?? 1.1 );
+		parent.updateMatrixWorld( true );
+		m.position.copy( parent.worldToLocal( target.clone() ) );
+		// constant angular size (~43° wide) whatever the distance
+		m.scale.setScalar( ( this._menuDist ?? 1.1 ) / 1.4 );
+		// world yaw so the panel's +z faces the head, expressed in parent space
+		const yaw = Math.atan2( head.x - target.x, head.z - target.z );
+		const wq = new THREE.Quaternion().setFromAxisAngle( new THREE.Vector3( 0, 1, 0 ), yaw );
+		const pq = new THREE.Quaternion();
+		parent.getWorldQuaternion( pq );
+		m.quaternion.copy( pq.invert().multiply( wq ) );
+
+	}
+
+	_updateVRMenuPlacement( dt ) {
+
+		if ( ! this._menuWanted || ! this.xrSession.presenting ) return;
+		if ( this._needsRecenter != null ) return; // seat the player first
+		if ( this._menuPlaceIn > 0 ) {
+
+			this._menuPlaceIn -= dt;
+			if ( this._menuPlaceIn <= 0 ) {
+
+				this._menuToHead();
+				this.vrMenu.show( true );
+
+			}
+
+			return;
+
+		}
+
+		// lazy follow: if the panel is far out of view for a moment, bring it back
+		const head = new THREE.Vector3(), fwd = new THREE.Vector3(), mp = new THREE.Vector3();
+		this._headPose( head, fwd );
+		this.vrMenu.mesh.getWorldPosition( mp );
+		const to = mp.sub( head ).setY( 0 ).normalize();
+		this._menuAway = to.dot( fwd ) < 0.45 ? this._menuAway + dt : 0;
+		if ( this._menuAway > 1.2 ) {
+
+			this._menuAway = 0;
+			this._menuToHead();
+
+		}
+
+	}
+
+	_hideVRMenu() {
+
+		this._menuWanted = false;
+		this.vrMenu.show( false );
+		this.xrControls.setPointerMode( false );
+		this.xrControls.showHelp( null );
 
 	}
 
@@ -717,7 +809,7 @@ export class Game {
 			} },
 			{ label: 'Exit VR', action: () => this.xrSession.exit() }
 		], 'Walk around the car — it is life-size. Point and pull the trigger.' );
-		this._placeVRMenu( this.garage.scene, new THREE.Vector3( 2.2, 1.25, 2.2 ), 0.75 );
+		this._placeVRMenu( this.garage.scene );
 
 	}
 
@@ -726,14 +818,13 @@ export class Game {
 		this.vrMenu.set( 'Summit staging', [
 			{ label: '▸ Ready — start countdown', action: () => {
 
-				this.race?.beginCountdown(); this.vrMenu.show( false ); this.xrControls.setPointerMode( false );
+				this.race?.beginCountdown(); this._hideVRMenu();
 
 			} },
 			{ label: 'Recenter seat', action: () => this._recenterXR() },
 			{ label: 'Back to garage', action: () => this.toGarage() }
-		], 'Grab the wheel with your grips. Triggers: right = gas, left = brake.' );
-		const e = this.cockpit.eyePos;
-		this._placeVRMenu( this.cockpit.group, new THREE.Vector3( e.x, e.y - 0.05, e.z + 1.2 ), Math.PI );
+		], 'Squeeze GRIP on the glowing rim to hold the wheel · right TRIGGER revs · A = Ready' );
+		this._placeVRMenu( this.cockpit.group, 0.62, true );
 
 	}
 
@@ -745,8 +836,7 @@ export class Game {
 			{ label: 'Recenter seat', action: () => this._recenterXR() },
 			{ label: 'Quit to garage', action: () => this._handlers().quit() }
 		] );
-		const e = this.cockpit.eyePos;
-		this._placeVRMenu( this.cockpit.group, new THREE.Vector3( e.x, e.y - 0.05, e.z + 1.1 ), Math.PI );
+		this._placeVRMenu( this.cockpit.group, 0.62 );
 
 	}
 
@@ -760,8 +850,7 @@ export class Game {
 			{ label: 'Race again', action: () => this._handlers().restart() },
 			{ label: 'Garage', action: () => this.toGarage() }
 		], `Your time ${fmt( r.time )}${r.rivalTime ? ' · rival ' + fmt( r.rivalTime ) : ''}` );
-		const e = this.cockpit.eyePos;
-		this._placeVRMenu( this.cockpit.group, new THREE.Vector3( e.x, e.y, e.z + 1.2 ), Math.PI );
+		this._placeVRMenu( this.cockpit.group, 0.62 );
 
 	}
 
@@ -784,11 +873,7 @@ export class Game {
 			{ label: 'Exit replay', action: () => this._replayCmd( 'exit' ) }
 		], 'Spectating from roadside spotter positions' );
 		r.camMode = r.camMode === 'director' ? 'spotter' : r.camMode;
-		this.rig.add( this.vrMenu.mesh );
-		this.vrMenu.mesh.position.set( 0.6, 1.1, - 1.0 );
-		this.vrMenu.mesh.rotation.set( 0, - 0.5, 0 );
-		this.vrMenu.show( true );
-		this.xrControls.setPointerMode( true );
+		this._placeVRMenu( this.rig );
 
 	}
 
@@ -853,6 +938,12 @@ export class Game {
 		const headLocal = cam.position.clone().applyAxisAngle( new THREE.Vector3( 0, 1, 0 ), Math.PI - yaw );
 		this.rig.position.copy( headLocal.negate() );
 		this.hud.toast( 'View recentered' );
+		if ( this._menuWanted && this._menuPlaceIn <= 0 ) {
+
+			this.rig.updateMatrixWorld( true );
+			this._menuPlaceIn = 0.05; // re-place in front of the new view
+
+		}
 
 	}
 
@@ -1040,6 +1131,7 @@ export class Game {
 		this.fps = lerp( this.fps, 1 / Math.max( dt, 1e-3 ), 0.05 );
 		this.input.update( dt );
 		this.xrControls.update( dt );
+		this._updateVRMenuPlacement( dt );
 		if ( this.vrMenu.mesh.visible ) this.vrMenu.updateHover( this.xrControls.hands.map( ( h ) => h.ray ) );
 
 		if ( this.state === 'title' ) {
