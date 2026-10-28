@@ -69,6 +69,12 @@ export class Game {
 		}
 
 		this.quality = q;
+		// canvas-painted liveries, posters and signs use these faces; canvas text
+		// does not trigger web-font loading on its own (capped so offline is fine)
+		await Promise.race( [
+			Promise.all( [ '900 40px "Noto Serif JP"', '800 40px "Noto Sans JP"', 'italic 900 40px Kanit' ].map( ( f ) => document.fonts?.load( f ) ) ).catch( () => {} ),
+			new Promise( ( r ) => setTimeout( r, 2500 ) )
+		] );
 		const container = this.root.querySelector( '#viewport' );
 		const ui = this.root.querySelector( '#ui' );
 		this.menus = new Menus( ui, this._handlers() );

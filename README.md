@@ -1,0 +1,190 @@
+# Touge Sakura — Initial Drift 峠・桜
+
+An Initial D–inspired downhill touge racer for the browser, built with
+Three.js (`three/webgpu` + TSL node materials) and WebXR. You race down a
+sakura-lined mountain pass at twilight in an AE86 Trueno, FD3S RX-7 or Silvia
+S13. It plays on a phone, on a desktop, and in the Meta Quest 3 browser, where
+you sit in a full 6DoF cockpit.
+
+The art direction is anime cel-shading (stepped toon ramps, ink outlines, a
+painted twilight sky, emissive lamps) with a manga arcade UI.
+
+## Running it
+
+```bash
+npm install
+npm run dev          # http://localhost:5173
+npm run build        # production build in dist/
+npm run preview      # serve dist/ on the LAN
+```
+
+**Meta Quest 3:** WebXR needs a secure context. Run `npm run dev:https`, open
+`https://<your-PC-LAN-IP>:5173` in the Quest Browser, accept the self-signed
+certificate, then choose **WebXR / VR Mode** on the title screen.
+
+Useful URL parameters: `?preset=low|quest|high`, `?touch` (show touch
+controls), `?noadapt` (fixed resolution), `?autostart`, `?autopilot`,
+`?skipto=<metres>`, and `?q.<field>=<value>` to override a single quality
+field (for example `?q.mirrors=0&q.petals=500`).
+
+## Game loop
+
+1. **Title.** An attract demo runs behind the menu: the AE86 and FD3S drift
+   through the hairpins while the camera cuts between low tracking, rear,
+   roadside-spotter and helicopter shots.
+2. **Garage / vehicle select.** A tuner garage with the roll-up door open onto
+   a moonlit cherry tree. Pick a car and livery, flip the headlights, check
+   tyre wear under Parts, and orbit the turntable (in VR you walk around the
+   life-size car).
+3. **Summit staging.** Rev at the line. Countdown lamps on the start gantry
+   and the radio call the start.
+4. **Downhill run.** A battle against the AI rival or a solo time attack:
+   esses, a carousel, hairpins and the five-hairpin complex. Drift chains
+   build a multiplier up to ×5.
+5. **Cooldown lot.** Both cars park under autopilot, then the results screen
+   opens.
+6. **Replay.** Watch the run from the auto director, a drone, roadside
+   spotters, chase or onboard cameras, with slow motion on the apexes.
+
+## Controls
+
+| | Keyboard | Gamepad | Quest Touch Plus | Touch |
+|---|---|---|---|---|
+| Steer | A/D, ←/→ | Left stick | Grab the wheel rim (one or two hands, hand-over-hand) | Left pad / tilt |
+| Throttle / brake | W/S, ↑/↓ | RT / LT | Right / left trigger | GAS / BRAKE |
+| Handbrake | Space | A | Pull the lever up (or hold B) | HB |
+| Shift | E / Q | RB / LB | Grab the shifter (sequential or H-pattern), slap, or A/X | + / − |
+| Camera | C | Y | — | — |
+| Pop-up headlights | H | D-pad ↑ | Press the dash switch | — |
+| HUD mode | U | View | Press the dash switch | — |
+| Pause | Esc / P | Start | Y | — |
+
+Menus work with the mouse, the keyboard (arrows and Enter), a gamepad
+(d-pad or stick, A to select, B to go back), touch, and VR laser pointers.
+
+## Features
+
+- **Views:** a first-person cockpit and a third-person chase camera on
+  flatscreens. In VR you get a native 6DoF cockpit that recenters to the
+  driver's eye.
+- **VR interactions:** a physics steering wheel with kinematic angular
+  damping, a handbrake lever, a sequential or H-pattern shifter (slap shifts
+  work too), pressable dashboard switches (pop-ups, hazards, HUD), and a tap
+  on the windshield phone to cycle the GPS view. Touch Plus haptics give you
+  an asphalt buzz, gutter pulses and an oversteer rumble.
+- **Cockpit:** right-hand drive with a low bucket-seat eye point. It has an
+  orange-backlit three-dial cluster in a binnacle, twin centre vents, a
+  cassette deck, a clip-on cup holder whose water sloshes with g-forces, a
+  portrait phone running GPS on a suction mount, door cards, visors, a
+  three-spoke wheel with gloved hands and forearms, and working mirrors
+  (one shared render target).
+- **HUDs:**
+  - Arcade HUD: race position and course timeline, race time and gap, drift
+    score with chain multiplier, an outlined course map, and an orange-to-red
+    arc tachometer with a big gear digit, speed and a turbo gauge.
+  - In the cockpit the arcade HUD collapses to a compact tach.
+  - Other HUD modes: diegetic only, projected on the windshield, or a floating
+    VR slate.
+  - A comfort vignette keeps the cabin as a stable anchor.
+- **World:**
+  - A procedural pass built from curvature and grade integration with
+    clothoid smoothing, a racing line and a speed profile.
+  - Cut/fill terrain with retaining walls, U-gutters you can hook a wheel in,
+    and guardrails.
+  - A solid yellow centre line, utility poles with sagging power lines,
+    red/white barricades, chevrons, street lamps with light pools, sakura and
+    cedar forests, summit and cooldown lots, torii gates and lanterns.
+- **Effects:**
+  - GPU-instanced sakura petals that swirl in each car's slipstream.
+  - Billboard drift smoke that dissolves near the lens, and velocity-stretched
+    guardrail sparks.
+  - Neon brake and tail-light halos, twin headlight spotlights, and hot brake
+    discs that glow.
+  - Selective bloom and drift-linked chromatic aberration on High.
+  - Manga speed lines, which turn off when the system asks for reduced motion.
+- **Audio:**
+  - Spatial Web Audio, with HRTF in VR and on High.
+  - Procedural engines: 4A-GE pops, a rotary lope, turbo whistle and blow-off
+    valve.
+  - Gear whine under the shifter, intake roar through the firewall, gravel
+    pinging off the floor pan, and tyre squeal.
+  - Walkie-talkie spotter calls run through a radio DSP chain. Their [CC]
+    captions are timed to each clip and drawn below the sightline as
+    `RADIO · speaker: "…"`.
+
+## Quality presets
+
+| | Low / Mobile | Meta Quest 3 | High / Desktop |
+|---|---|---|---|
+| Lighting | Unlit toon ramp, light-pool decals | Toon lighting, headlight spot shadow | Toon lighting, cascaded moon shadows |
+| Post | — | — | Bloom, chromatic aberration, light shafts |
+| Mirrors | Static | 384 px, every 2nd frame | 768 px, every 2nd frame |
+| XR | — | Multiview, foveation, 72/90 Hz | — |
+
+On top of the presets the renderer uses culling, chunked LODs and merged
+geometry everywhere. A road chunk and a terrain chunk each take one draw call.
+Measured in headless Chromium on the Low preset: about 41 draw calls on the
+title, 21 in the garage, 42 in a chase-camera race and 69 in the cockpit, all
+under the 80-call budget. Adaptive resolution protects the frame rate on
+flatscreens.
+
+### WebXR details
+
+- The renderer is `WebGPURenderer({ forceWebGL: true, multiview: true })`.
+  With a WebXR Layers projection layer of `textureType: 'texture-array'`,
+  three.js renders both eyes in a single pass via `OVR_multiview2`.
+- It requests `local-floor` and `session.updateTargetFrameRate(90)`, falling
+  back to 72.
+- Fixed foveated rendering is set with `renderer.xr.setFoveation`.
+
+## Project layout
+
+```
+src/
+  core/      Game state machine, renderer + post pipeline, quality presets, settings
+  world/     Track generation, terrain field + chunks, road mesh + roadside props, lots
+  vehicle/   Car specs, livery painter, procedural car model, physics, AI, cockpit
+  modes/     Race, replay, title attract demo, garage + garage set
+  fx/        Petals, smoke / sparks / halos
+  audio/     Audio engine, car audio, radio + script, ambience
+  input/     Keyboard / gamepad / touch
+  xr/        XR session, controllers + cockpit interactions, comfort vignette
+  ui/        Menus, HUD, minimap, speed lines, telemetry panel + phone GPS, captions, VR menu
+  render/    Toon materials, sky, procedural textures, geometry builder
+tests/       Headless Playwright screenshot drivers and an IWER-based XR test
+scripts/     Track and physics sanity checks (node)
+public/audio/radio/   Spotter voice lines
+```
+
+## Testing
+
+With the dev server running:
+
+```bash
+node tests/game-shot.mjs "?preset=quest&noadapt" /tmp/shot "wait:4000|shot:title|click:[data-act=battle]|wait:3000|shot:garage"
+node tests/xr-drive.mjs /tmp/xr      # emulated Quest session (IWER)
+node scripts/check-track.mjs         # track geometry sanity
+```
+
+`xr-drive.mjs` checks the emulated session end to end. The head sits on the
+cockpit eye, both hands grab the wheel, turning the wheel steers the rack, and
+the triggers drive the car.
+
+IWER can't emulate multiview or a real XR framebuffer, so it logs
+null-framebuffer errors. Those, and the mirror feedback-loop warnings that
+follow them, come from the emulator. Multiview, foveation and frame-rate
+locking need real Quest hardware.
+
+## Credits
+
+- **Voice lines:** generated with ElevenLabs text-to-speech for this project.
+- **Sound effects:** every other sound is synthesised at runtime with Web
+  Audio. Openverse (api.openverse.org) was searched for sound effects, but its
+  audio CDN wasn't reachable from the build environment, so no third-party
+  clips are used.
+- **Fonts:** Kanit, Noto Sans JP and Noto Serif JP from Google Fonts.
+- **Engine:** three.js (MIT).
+
+All names, shops and teams on the liveries are fictional. Initial D is a
+trademark of its respective owners; this is a fan-inspired project with no
+affiliation.

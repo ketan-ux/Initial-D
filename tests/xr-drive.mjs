@@ -17,7 +17,7 @@ page.on( 'pageerror', ( e ) => errors.push( 'pageerror: ' + e.message + ' ' + ( 
 await page.goto( 'http://localhost:5173/tests/xr-test.html?preset=quest&noadapt' + ( process.env.XRQ || '' ) + '' );
 await page.waitForFunction( () => window.__game && window.__game.state !== 'loading', null, { timeout: 240000 } );
 console.log( 'vrSupported', await page.evaluate( () => window.__game.vrSupported ) );
-await page.click( '.loading .vr-btn' );
+await page.click( '.title [data-act="vr"]' );
 await page.waitForTimeout( 4000 );
 console.log( 'garage xr', JSON.stringify( await page.evaluate( () => ( { presenting: window.__game.xrSession.presenting, state: window.__game.state, menu: window.__game.vrMenu.mesh.visible, info: window.__game.xrInfo } ) ) ) );
 await page.screenshot( { path: out + '-garage.png' } );

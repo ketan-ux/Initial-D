@@ -11,7 +11,8 @@ export default defineConfig( ( { mode } ) => ( {
 		target: 'es2022',
 		chunkSizeWarningLimit: 2000,
 		rollupOptions: {
-			output: { manualChunks: { three: [ 'three', 'three/webgpu', 'three/tsl' ] } }
+			// three.js in its own long-cacheable chunk (Rolldown wants a function)
+			output: { manualChunks: ( id ) => ( id.includes( '/node_modules/three/' ) ? 'three' : undefined ) }
 		}
 	}
 } ) );
