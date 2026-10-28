@@ -36,16 +36,17 @@ const HUD_MODES = [ 'auto', 'diegetic', 'windshield', 'slate', 'off' ];
 const HUD_NAMES = { auto: 'arcade', diegetic: 'diegetic only', windshield: 'windshield', slate: 'floating slate', off: 'off' };
 const REDUCED_MOTION = window.matchMedia?.( '(prefers-reduced-motion: reduce)' ).matches;
 const _v = new THREE.Vector3(), _f = new THREE.Vector3(), _u = new THREE.Vector3(), _q = new THREE.Quaternion();
-// VR performance levels. Stereo doubles every draw, so VR always runs a lean
-// profile: a short draw distance hidden in mountain mist plus a painted
-// silhouette ring, coarse terrain LOD sooner, no headlight shadow pass,
-// slower/shorter mirrors, fewer petals and no ink outlines. The governor
-// steps down a level whenever the headset misses its frame rate.
+// VR performance levels. Stereo doubles every draw, so VR always runs a lean,
+// race-first profile: a short draw distance hidden in mountain mist plus a
+// painted silhouette ring, roadside trees only (the forest behind them is
+// dropped), coarse terrain LOD sooner, no headlight shadow pass, slower/
+// shorter mirrors, fewer petals and no ink outlines. The governor steps down
+// a level whenever the headset misses its frame rate.
 const VR_LEVELS = [
-	{ far: 230, fog: 0.0076, lod: 170, mirrorRate: 3, mirrorFar: 90, petals: 0.5 },
-	{ far: 190, fog: 0.009, lod: 140, mirrorRate: 4, mirrorFar: 70, petals: 0.3 },
-	{ far: 155, fog: 0.011, lod: 110, mirrorRate: 6, mirrorFar: 50, petals: 0.15 },
-	{ far: 125, fog: 0.0135, lod: 90, mirrorRate: 0, mirrorFar: 40, petals: 0 }
+	{ far: 170, fog: 0.0095, lod: 130, near: 1, farTrees: 0.12, mirrorRate: 3, mirrorFar: 80, petals: 0.4 },
+	{ far: 145, fog: 0.011, lod: 110, near: 1, farTrees: 0, mirrorRate: 4, mirrorFar: 60, petals: 0.25 },
+	{ far: 120, fog: 0.0135, lod: 90, near: 0.6, farTrees: 0, mirrorRate: 6, mirrorFar: 45, petals: 0.1 },
+	{ far: 100, fog: 0.016, lod: 70, near: 0.35, farTrees: 0, mirrorRate: 0, mirrorFar: 35, petals: 0 }
 ];
 
 export class Game {
@@ -391,6 +392,7 @@ export class Game {
 			this.xrInfo = info;
 			this._gov = null;
 			this._applyVRPerf();
+			if ( this.race ) this._startWarm(); // VR builds its own (stereo) pipelines
 			this.cockpit?.setVR( true );
 			this.captions.setVR( true );
 			this.hud.show( false );
@@ -588,6 +590,7 @@ export class Game {
 		this.captions.setVR( this.xrSession.presenting );
 		this.xrControls.setCockpit( this.cockpit, this.race.player.physics );
 		this._applyVRPerf(); // mirrors + headlight shadows of the new cars
+		this._startWarm(); // pre-upload the pass while the player sits at the line
 		this.hud.setSpec( this.race.player.spec, this.track );
 		this.carAudio = this.race.cars.map( ( c ) => new CarAudio( audio, c, { isPlayer: c === this.race.player } ) );
 		this.fx.clear();
@@ -717,6 +720,7 @@ export class Game {
 		this.camera.updateProjectionMatrix();
 		if ( this.scene.fog ) this.scene.fog.density = on ? L.fog : 0.0021 * q.fogDensity;
 		this.world.terrain.setLodDistance( on ? L.lod : 300, ! on );
+		this.world.terrain.setTreeDensity( on ? L.near : 1, on ? L.farTrees : 1 );
 		this.mist.mesh.visible = on;
 		this.petals.setVisibleCount( on ? Math.round( q.petals * L.petals ) : q.petals );
 		for ( const cam of [ this.camera, this.garage?.camera ] ) if ( cam ) {
@@ -744,10 +748,67 @@ export class Game {
 
 	}
 
+	// Pre-warm: the renderer uploads a mesh's geometry and builds its
+	// pipeline the first time that mesh is drawn, which hitched every time a
+	// new stretch of the pass (or a chunk's detailed LOD) came into view.
+	// During staging, force a few meshes per frame to draw regardless of the
+	// frustum and LOD (both levels), so the whole pass is resident before GO.
+	_startWarm() {
+
+		const list = [];
+		this.scene.traverse( ( o ) => {
+
+			if ( ! o.isMesh || ! o.geometry ) return;
+			if ( ! o.visible && ! o.parent?.isLOD ) return;
+			list.push( o );
+
+		} );
+		this._warm = { list, i: 0, active: [] };
+
+	}
+
+	_warmStep() {
+
+		const w = this._warm;
+		if ( ! w ) return;
+		for ( const o of w.active ) {
+
+			o.frustumCulled = o.userData.warmFC;
+			if ( o.parent?.isLOD ) o.parent.autoUpdate = true; // LOD.update restores level visibility
+
+		}
+
+		w.active.length = 0;
+		if ( w.i >= w.list.length ) {
+
+			this._warm = null;
+			return;
+
+		}
+
+		const n = this.xrSession.presenting ? 4 : 16;
+		for ( let k = 0; k < n && w.i < w.list.length; k ++ ) {
+
+			const o = w.list[ w.i ++ ];
+			o.userData.warmFC = o.frustumCulled;
+			o.frustumCulled = false;
+			if ( o.parent?.isLOD ) {
+
+				o.parent.autoUpdate = false;
+				o.visible = true;
+
+			}
+
+			w.active.push( o );
+
+		}
+
+	}
+
 	// Watches the headset frame rate and trades draw distance for frames.
 	_vrGovernor( dt ) {
 
-		if ( ! this.xrSession.presenting || this.state === 'garage' || this.paused ) return;
+		if ( ! this.xrSession.presenting || this.state === 'garage' || this.paused || this._warm ) return;
 		const g = this._gov ??= { t: 0, n: 0, good: 0 };
 		g.t += dt; g.n ++;
 		if ( g.t < 1.5 ) return;
@@ -1214,6 +1275,7 @@ export class Game {
 		dt = clamp( dt, 0, 0.1 );
 		this.fps = lerp( this.fps, 1 / Math.max( dt, 1e-3 ), 0.05 );
 		this.input.update( dt );
+		this.xrControls.attach( this.state === 'garage' ? this.garage.rig : this.rig );
 		this.xrControls.update( dt );
 		this._vrGovernor( dt );
 		this._updateVRMenuPlacement( dt );
@@ -1410,6 +1472,7 @@ export class Game {
 
 		// --- render ---
 		if ( this.cockpit.group.visible && ! this.paused ) this.cockpit.renderMirrors( this.rs.renderer, this.scene );
+		this._warmStep();
 		this.rs.render( this.scene, this.camera, this.cameraMode === 'chase' ? tel.drift : tel.drift * 0.5 );
 
 	}

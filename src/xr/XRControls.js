@@ -72,8 +72,11 @@ export class XRControls {
 
 	}
 
+	// Controllers ride on the active scene's camera rig (the race rig or the
+	// garage rig): they're only drawn, and their rays only update, there.
 	attach( rig ) {
 
+		if ( this.hands[ 0 ].grip.parent === rig ) return;
 		for ( const h of this.hands ) rig.add( h.grip, h.ray, h.card.mesh );
 
 	}

@@ -162,16 +162,24 @@ flatscreens.
   drew the world upside down, left materials missing and the background
   uncleared. That path is now opt-in with `?xrmultiview`.
 - It requests `local-floor`, a 72 Hz target and a 0.8 framebuffer scale.
-- Stereo doubles every draw, so VR always runs a lean profile:
-  - about 230 m of draw distance, ending in mountain mist and a painted
+- Stereo doubles every draw, so VR always runs a lean, race-first profile:
+  - about 170 m of draw distance, ending in mountain mist and a painted
     silhouette ring of ridges and treelines (`MistRing`)
+  - roadside trees only: each terrain chunk stores its trees roadside-first
+    in shuffled order, so VR draws a prefix with `drawRange` and drops most
+    of the forest behind them (no rebuild, still one draw call per chunk)
   - terrain switches to its coarse level sooner
   - no headlight shadow pass, slower and shorter mirrors, fewer petals, no
     ink outlines
-  - a governor steps down through four levels (to 125 m) when the headset
-    misses its frame rate, and back up when there's headroom
-  - in the emulator this takes a stereo frame from 194 to about 100 draw
-    calls and roughly halves the triangles
+  - a governor steps down through four levels (to 100 m, with roadside
+    trees thinned too) when the headset misses its frame rate, and back up
+    when there's headroom
+  - in the emulator a stereo frame drops from 194 to about 100 draw calls,
+    and triangles per view drop from 425k to about 115k
+- Pre-warm: during summit staging every mesh in the scene is forced to draw
+  once, a few per frame, in both terrain LOD levels, so geometry uploads and
+  pipeline builds happen before GO instead of hitching as each new stretch
+  of the pass comes into view.
 - In VR the arcade HUD becomes a glass HUD floating over the hood: RPM,
   speed, gear, position, time, gap and the start countdown.
 - Fixed foveated rendering is set with `renderer.xr.setFoveation`.

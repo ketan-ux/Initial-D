@@ -63,6 +63,23 @@ export class Terrain {
 
 	// Short-draw-distance profile (VR): switch chunks to the coarse level
 	// sooner and drop the far mountain ring (it sits past the far plane).
+	// Tree thinning: keep `nearFrac` of the roadside trees, and `farFrac` of
+	// the forest behind them (far trees only once every roadside one is in).
+	setTreeDensity( nearFrac = 1, farFrac = 1 ) {
+
+		for ( const c of this.group.children ) if ( c.isLOD ) for ( const l of c.levels ) {
+
+			const t = l.object.userData.trees;
+			if ( ! t ) continue;
+			const far = t.ends.length - t.near;
+			const n = farFrac > 0 ? t.near + Math.round( far * farFrac ) : Math.round( t.near * nearFrac );
+			const count = n === t.ends.length ? Infinity : n > 0 ? t.ends[ n - 1 ] : t.ground;
+			l.object.geometry.setDrawRange( 0, count );
+
+		}
+
+	}
+
 	setLodDistance( d, backdrop = true ) {
 
 		for ( const c of this.group.children ) if ( c.isLOD ) c.levels[ 1 ].distance = d;
@@ -243,7 +260,13 @@ export class Terrain {
 		const g = this.treeGeos;
 		const m = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), s = new THREE.Vector3();
 		const up = new THREE.Vector3( 0, 1, 0 );
-		for ( let k = 0; k < trees.length; k ++ ) {
+		// roadside trees first, then the background forest, shuffled within
+		// each group: any prefix of the index buffer is an even thinning, so
+		// VR can draw fewer trees with drawRange alone (no rebuild, 1 draw)
+		const order = trees.map( ( t, k ) => k ).sort( ( a, c ) =>
+			( trees[ c ].near - trees[ a ].near ) || ( hash( a ) - hash( c ) ) );
+		const treeEnds = [], treeNear = [], ground = b.idx.length;
+		for ( const k of order ) {
 
 			const t = trees[ k ];
 			if ( lodLevel === 1 && t.type === 'cedar' && ( k % 3 ) ) continue;
@@ -279,10 +302,14 @@ export class Terrain {
 
 			}
 
+			treeEnds.push( b.idx.length );
+			treeNear.push( t.near );
+
 		}
 
 		const geo = b.build();
 		const mesh = new THREE.Mesh( geo, this.material );
+		mesh.userData.trees = { ends: treeEnds, near: treeNear.filter( Boolean ).length, ground };
 		mesh.receiveShadow = this.quality.shadows === 'csm';
 		mesh.matrixAutoUpdate = false;
 		mesh.updateMatrix();
@@ -411,5 +438,13 @@ function mergeSimple( geos ) {
 	for ( const g of geos ) b.addGeometry( g.index ? g : g, null );
 	const out = b.build();
 	return out;
+
+}
+
+// deterministic 0..1 hash for stable tree shuffles
+function hash( k ) {
+
+	const x = Math.sin( k * 12.9898 + 78.233 ) * 43758.5453;
+	return x - Math.floor( x );
 
 }

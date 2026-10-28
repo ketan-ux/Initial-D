@@ -23,6 +23,8 @@ const snap = async ( name ) => {
 
 await page.click( '.title [data-act="vr"]' );
 await page.waitForTimeout( 5000 );
+if ( process.env.XRGARAGE ) console.log( 'garage', JSON.stringify( await page.evaluate( process.env.XRGARAGE ) ) );
+await page.waitForTimeout( 1500 );
 await snap( 'garage' );
 await page.evaluate( () => window.__game.startRace() );
 await page.waitForTimeout( 6000 );
