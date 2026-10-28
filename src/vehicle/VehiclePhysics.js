@@ -209,7 +209,7 @@ export class VehiclePhysics {
 			// circle (Ackermann angle for R = v^2 / mu g) plus peak slip (~0.15
 			// rad). More lock than that only scrubs speed (understeer).
 			const v2 = Math.max( speed * speed, 1 );
-			const peakLock = Math.atan( spec.wheelbase * spec.grip * G / v2 ) + 0.15;
+			const peakLock = Math.atan( spec.wheelbase * spec.grip * G / v2 ) + 0.09;
 			lock = Math.min( lock, peakLock );
 			steerTarget = clamp( c.steer, - 1, 1 ) * lock;
 
@@ -225,7 +225,8 @@ export class VehiclePhysics {
 
 		}
 
-		const steerRate = c.steerIsAbsolute ? 14 : 4.2;
+		// keys/touch: quick at parking speed, progressively calmer at speed
+		const steerRate = c.steerIsAbsolute ? 14 : 4.2 / ( 1 + speed / 28 );
 		this.steerAngle += clamp( steerTarget - this.steerAngle, - steerRate * dt, steerRate * dt );
 		const delta = this.steerAngle;
 
@@ -257,7 +258,7 @@ export class VehiclePhysics {
 		// reverse is a manoeuvring gear: governed to ~28 km/h
 		if ( this.gear === - 1 ) torque *= clamp( ( 7.8 + vLong ) / 2, 0, 1 );
 		// engine braking off-throttle
-		const engineBrake = this.gear !== 0 && this.shiftTimer === 0 ? ( 1 - throttle ) * ( engineRpm / eng.redline ) * 26 : 0;
+		const engineBrake = this.gear !== 0 && this.shiftTimer === 0 ? ( 1 - throttle ) * ( engineRpm / eng.redline ) * 13 : 0; // softer: lifting mid-corner no longer drags the rear round
 		const driveDir = this.gear === - 1 ? - 1 : 1;
 		let Fdrive = ( torque * ratio * 0.88 ) / spec.wheelRadius * driveDir;
 		Fdrive -= sign( vLong ) * engineBrake * ratio / spec.wheelRadius * ( Math.abs( vLong ) > 0.5 ? 1 : 0 );
@@ -294,8 +295,11 @@ export class VehiclePhysics {
 			const alphaR = Math.atan2( vLat - this.b * this.yawRate, vl );
 			this.frontSlip = alphaF; this.rearSlip = alphaR;
 			const capF = Math.sqrt( Math.max( 0, ( mu * FzF ) ** 2 - FxF * FxF ) );
-			let capR = Math.sqrt( Math.max( 0, ( rearCap ) ** 2 - FxR * FxR ) );
-			capR = Math.max( capR, rearCap * 0.22 );
+			// drive force eats into rear side grip, but only partly: a gentle
+			// steer at full throttle should stay planted; big steer + throttle
+			// (or the handbrake) still breaks the rear loose for drifting
+			let capR = Math.sqrt( Math.max( 0, ( rearCap ) ** 2 - ( FxR * 0.85 ) ** 2 ) );
+			capR = Math.max( capR, rearCap * 0.27 );
 			if ( hb > 0 ) capR *= 1 - 0.62 * hb;
 			FyF = - capF * magic( alphaF, 10, 1.5 );
 			FyR = - capR * magic( alphaR, 9, 1.42 );

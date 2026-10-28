@@ -577,7 +577,9 @@ export class Cockpit {
 		const uvRemap = ( geo, u0, u1 ) => {
 
 			const uv = geo.attributes.uv;
-			for ( let i = 0; i < uv.count; i ++ ) uv.setX( i, u1 + ( u0 - u1 ) * uv.getX( i ) ); // mirrored horizontally
+			// mirrored left-right like a real mirror; v flipped because the render
+			// target's rows come out bottom-up relative to the plane (was upside down)
+			for ( let i = 0; i < uv.count; i ++ ) uv.setXY( i, u1 + ( u0 - u1 ) * uv.getX( i ), 1 - uv.getY( i ) );
 			return geo;
 
 		};
@@ -604,8 +606,9 @@ export class Cockpit {
 			g.position.copy( pos );
 			g.rotation.set( rotX, Math.PI + rotY, 0, 'YXZ' ); // face the driver (-z)
 			const frame = new THREE.Mesh( new THREE.CapsuleGeometry( ( h + 0.016 ) / 2, w - h + 0.004, 4, 12 ).rotateZ( Math.PI / 2 ).scale( 1, 1, 0.22 ), frameMat );
-			frame.position.z = - 0.008;
+			frame.position.z = - 0.016; // fully behind the glass (it used to poke through as an oval)
 			const glassM = new THREE.Mesh( uvRemap( new THREE.PlaneGeometry( w, h ), u0, u1 ), mat );
+			glassM.position.z = 0.002;
 			g.add( frame, glassM );
 			this.group.add( g );
 			return g;
@@ -615,7 +618,7 @@ export class Cockpit {
 		// rear-view hanging from the header at the car's centreline, angled to the driver
 		// rear-view: hangs off a mount on the header rail by a short stem
 		const rz = this.model.zOf( roofF + 0.08 );
-		this.rearMirror = mk( 0.21, 0.058, 0.32, 0.68, new THREE.Vector3( 0, roofY - 0.09, rz ), - 0.38, 0.06 );
+		this.rearMirror = mk( 0.21, 0.058, 0.32, 0.68, new THREE.Vector3( 0, roofY - 0.09, rz ), - 0.12, 0.04 ); // nearly square-on, a slight angle toward the driver
 		const mb = new GeoBuilder( { color: false } );
 		mb.addGeometry( new THREE.BoxGeometry( 0.06, 0.02, 0.07 ), new THREE.Matrix4().makeTranslation( 0, roofY - 0.012, rz + 0.01 ) ); // mount
 		mb.addGeometry( new THREE.CylinderGeometry( 0.011, 0.011, 0.055, 8 ), new THREE.Matrix4().makeTranslation( 0, roofY - 0.045, rz ) ); // stem
