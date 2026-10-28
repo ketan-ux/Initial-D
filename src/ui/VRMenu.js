@@ -1,5 +1,6 @@
 import * as THREE from 'three/webgpu';
 import { emissiveMaterial } from '../render/toon.js';
+import { C, SKEW, font, fontsReady, drawCard, drawPlate, drawKey, inkText, fitText } from './theme.js';
 
 // Draw order for VR overlays: panels after the world, hands after panels.
 export const VR_PANEL_ORDER = 100; // menu; legends at +0.25, cursor at +0.5
@@ -20,22 +21,19 @@ const _hitValid = ( rayObj, mesh ) => {
 
 };
 
-// fillText that shrinks the font until the line fits maxW
-const fitText = ( ctx, text, x, y, maxW, size, weight ) => {
-
-	do ctx.font = `${weight} ${size}px Arial`; while ( ctx.measureText( text ).width > maxW && -- size > 12 );
-	ctx.fillText( text, x, y );
-
-};
-
 // World-anchored canvas menu for VR, operated with controller laser
 // pointers (trigger = select). Large targets, high contrast, one column.
 export class VRMenu {
 
-	constructor( { width = 1.1, height = 0.7 } = {} ) {
+	constructor( { width = 1.1 } = {} ) {
 
+		// a square canvas; the panel shows only the rows a menu needs (texture
+		// repeat/offset crop + matching plane height), so short and long menus
+		// both get full-size buttons
 		this.canvas = document.createElement( 'canvas' );
-		this.canvas.width = 1024; this.canvas.height = Math.round( 1024 * height / width );
+		this.canvas.width = 1024; this.canvas.height = 1024;
+		this.width = width;
+		this.usedH = 0;
 		this.tex = new THREE.CanvasTexture( this.canvas );
 		this.tex.colorSpace = THREE.NoColorSpace;
 		// Opaque panel (alpha-tested corners) drawn after the cabin with an
@@ -46,7 +44,7 @@ export class VRMenu {
 		const mat = new THREE.MeshBasicNodeMaterial( { map: this.tex, alphaTest: 0.5, side: THREE.DoubleSide } );
 		mat.depthFunc = THREE.AlwaysDepth;
 		mat.fog = false;
-		this.mesh = new THREE.Mesh( new THREE.PlaneGeometry( width, height ), mat );
+		this.mesh = new THREE.Mesh( new THREE.PlaneGeometry( width, width * 0.6 ), mat );
 		this.mesh.renderOrder = VR_PANEL_ORDER;
 		this.mesh.visible = false;
 		// pointer cursor: where the laser meets the panel
@@ -56,13 +54,13 @@ export class VRMenu {
 		this.cursor.renderOrder = VR_PANEL_ORDER + 0.5; // after the panel, before the hands
 		this.cursor.visible = false;
 		this.mesh.add( this.cursor );
-		this.height = height;
 		this.title = '';
 		this.subtitle = '';
 		this.items = [];
 		this.hover = - 1;
 		this.rects = [];
 		this.dirty = true;
+		fontsReady().then( () => this.draw() ); // repaint once Kanit has loaded
 
 	}
 
@@ -86,57 +84,83 @@ export class VRMenu {
 	draw() {
 
 		const c = this.canvas, ctx = c.getContext( '2d' );
-		const W = c.width, H = c.height;
-		ctx.clearRect( 0, 0, W, H );
-		ctx.fillStyle = '#100a1e';
-		ctx.beginPath(); ctx.roundRect( 0, 0, W, H, 40 ); ctx.fill();
-		ctx.strokeStyle = '#ff8fc0'; ctx.lineWidth = 4; ctx.stroke();
-		ctx.fillStyle = '#ffffff';
-		ctx.font = '900 56px Arial';
-		ctx.textAlign = 'left'; ctx.textBaseline = 'top';
-		ctx.fillText( this.title, 48, 36 );
-		if ( this.subtitle ) {
-
-			ctx.fillStyle = '#c9b8ff';
-			fitText( ctx, this.subtitle, 50, 104, W - 100, 28, '500' );
-
-		}
-
-		const top = this.subtitle ? 156 : 124;
+		const W = c.width;
 		const n = this.items.length;
-		const gap = 14;
-		const foot = 64; // controller legend
-		const bh = Math.min( 92, ( H - top - foot - 20 - gap * ( n - 1 ) ) / Math.max( 1, n ) );
-		ctx.font = '700 26px Arial';
-		ctx.fillStyle = '#ffd166';
-		ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-		fitText( ctx, '◉ Point + TRIGGER to select · A = top option · look at a controller for its buttons', 50, H - foot / 2 - 6, W - 100, 26, '700' );
+		const top = this.subtitle ? 162 : 124, gap = 18, foot = 72;
+		const bh = Math.min( 88, ( c.height - top - foot - 40 - gap * ( n - 1 ) ) / Math.max( 1, n ) );
+		const H = Math.round( top + n * ( bh + gap ) - gap + 28 + foot + 16 );
+		this._layout( H );
+		ctx.clearRect( 0, 0, W, c.height );
+		drawCard( ctx, W, H );
+		ctx.textBaseline = 'alphabetic';
+		inkText( ctx, this.title, 44, 92, 62, { maxW: W - 120 } );
+		ctx.fillStyle = C.muted;
+		if ( this.subtitle ) fitText( ctx, this.subtitle, 48, 134, W - 120, 26, 600, false );
+
 		this.rects = [];
 		this.items.forEach( ( it, i ) => {
 
 			const y = top + i * ( bh + gap );
-			const r = { x: 48, y, w: W - 96, h: bh };
+			const r = { x: 44, y, w: W - 120, h: bh };
 			this.rects.push( r );
 			const hov = i === this.hover;
-			ctx.fillStyle = hov ? '#ff8fc0' : 'rgba(255,255,255,0.08)';
-			ctx.beginPath(); ctx.roundRect( r.x, r.y, r.w, r.h, 22 ); ctx.fill();
-			ctx.fillStyle = hov ? '#1a0f24' : '#ffffff';
-			ctx.font = `800 ${Math.round( bh * 0.4 )}px Arial`;
+			drawPlate( ctx, r.x, r.y, r.w, r.h, { selected: hov, focus: hov, scale: 1.6 } );
+			ctx.fillStyle = C.ink;
 			ctx.textBaseline = 'middle';
-			ctx.fillText( it.label, r.x + 30, r.y + r.h / 2 );
+			ctx.textAlign = 'left';
+			const label = ( hov ? '▶ ' : '' ) + it.label.replace( /^▸\s*/, '' ).toUpperCase();
+			fitText( ctx, label, r.x + 34, r.y + r.h / 2 + 2, r.w * 0.6, bh * 0.44, 800 );
+			let right = r.x + r.w - 30 - r.h * SKEW;
+			if ( i === 0 ) {
+
+				// the A button picks the top option: show it on the plate
+				const kh = r.h * 0.56;
+				ctx.font = font( kh * 0.58, 900 );
+				const kw = ctx.measureText( 'A' ).width + kh * 0.9;
+				drawKey( ctx, 'A', right - kw, r.y + ( r.h - kh ) / 2, kh, { fill: C.yellow } );
+				right -= kw + 18;
+
+			}
 			if ( it.detail ) {
 
 				ctx.textAlign = 'right';
-				ctx.font = `500 ${Math.round( bh * 0.3 )}px Arial`;
-				ctx.fillStyle = hov ? '#3a1d44' : '#bfb2e8';
-				ctx.fillText( it.detail, r.x + r.w - 30, r.y + r.h / 2 );
-				ctx.textAlign = 'left';
+				ctx.fillStyle = hov ? C.ink : '#4a4458';
+				ctx.font = font( bh * 0.3, 700 );
+				ctx.fillText( it.detail.toUpperCase(), right, r.y + r.h / 2 + 2 );
 
 			}
 
 		} );
+
+		// controller legend in key-cap chips
+		const ly = H - foot - 8, kh = 34;
+		let x = 48;
+		ctx.textBaseline = 'middle';
+		const say = ( t ) => {
+
+			ctx.fillStyle = '#fff'; ctx.textAlign = 'left'; ctx.font = font( 22, 700 );
+			ctx.fillText( t, x, ly + kh / 2 + 1 ); x += ctx.measureText( t ).width + 14;
+
+		};
+		x += drawKey( ctx, 'TRIGGER', x, ly, kh ) + 12; say( 'select' );
+		x += drawKey( ctx, 'A', x, ly, kh, { fill: C.yellow } ) + 12; say( 'top option' );
+		ctx.fillStyle = C.muted; ctx.font = font( 20, 600 );
+		ctx.fillText( '· look at a controller for its buttons', x, ly + kh / 2 + 1 );
 		this.tex.needsUpdate = true;
 		this.dirty = false;
+
+	}
+
+	// Crop the texture to the painted rows and size the plane to match.
+	_layout( H ) {
+
+		if ( H === this.usedH ) return;
+		this.usedH = H;
+		const r = H / this.canvas.height;
+		this.tex.repeat.set( 1, r );
+		this.tex.offset.set( 0, 1 - r ); // flipY: canvas top is v = 1
+		this.mesh.geometry.dispose();
+		this.mesh.geometry = new THREE.PlaneGeometry( this.width, this.width * r );
 
 	}
 
@@ -150,7 +174,7 @@ export class VRMenu {
 		const hit = _ray.intersectObject( this.mesh, false )[ 0 ];
 		if ( ! hit || ! hit.uv ) return - 1;
 		if ( out ) out.copy( hit.point );
-		const x = hit.uv.x * this.canvas.width, y = ( 1 - hit.uv.y ) * this.canvas.height;
+		const x = hit.uv.x * this.canvas.width, y = ( 1 - hit.uv.y ) * this.usedH;
 		return this.rects.findIndex( ( r ) => x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h );
 
 	}

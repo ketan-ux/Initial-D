@@ -4,6 +4,7 @@ import { toonMaterial } from '../render/toon.js';
 import { settings } from '../core/settings.js';
 import { bus } from '../core/events.js';
 import { VR_PANEL_ORDER, VR_HAND_ORDER } from '../ui/VRMenu.js';
+import { C, fontsReady, drawCard, drawKey, inkText, fitText } from '../ui/theme.js';
 
 const _v = new THREE.Vector3(), _w = new THREE.Vector3(), _q = new THREE.Quaternion();
 const _m4 = new THREE.Matrix4(), _up = new THREE.Vector3( 0, 1, 0 );
@@ -674,6 +675,7 @@ class HelpCard {
 		this.mesh.renderOrder = VR_PANEL_ORDER + 0.25;
 		this.mesh.visible = false;
 		this.show = 0; // 0…1 pop-in
+		fontsReady().then( () => this.args && this.draw( ...this.args ) );
 
 	}
 
@@ -682,31 +684,21 @@ class HelpCard {
 		const rows = HELP[ mode ]?.[ handedness ];
 		this.rows = rows;
 		if ( ! rows ) return;
+		this.args = [ handedness, mode, shifter ];
 		const c = this.canvas, ctx = c.getContext( '2d' ), W = c.width, H = c.height;
-		ctx.clearRect( 0, 0, W, H );
-		ctx.fillStyle = '#100a1e';
-		ctx.beginPath(); ctx.roundRect( 4, 4, W - 8, H - 8, 28 ); ctx.fill();
-		ctx.strokeStyle = '#ffd166'; ctx.lineWidth = 4; ctx.stroke();
-		ctx.fillStyle = '#ffd166';
-		ctx.font = '800 26px Arial';
-		ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-		ctx.fillText( handedness === 'left' ? 'LEFT CONTROLLER' : 'RIGHT CONTROLLER', 26, 30 );
-		const rh = ( H - 66 ) / rows.length;
+		drawCard( ctx, W, H, { pad: 4, border: 5 } );
+		ctx.textBaseline = 'alphabetic';
+		inkText( ctx, handedness === 'left' ? 'Left controller' : 'Right controller', 22, 44, 28, { color: C.yellow, maxW: W - 60 } );
+		const top = 60, rh = ( H - top - 20 ) / rows.length;
 		rows.forEach( ( [ key, what ], i ) => {
 
-			const y = 62 + rh * ( i + 0.5 );
-			ctx.fillStyle = '#ff8fc0';
-			ctx.beginPath(); ctx.roundRect( 18, y - rh * 0.42, 136, rh * 0.84, 12 ); ctx.fill();
-			ctx.fillStyle = '#1a0f24';
-			ctx.font = `900 ${Math.round( Math.min( rh * 0.5, 30 ) )}px Arial`;
-			ctx.textAlign = 'center';
-			ctx.fillText( key, 86, y + 1 );
-			ctx.fillStyle = '#ffffff';
-			ctx.textAlign = 'left';
+			const y = top + rh * i;
+			const kh = Math.min( rh * 0.78, 36 );
+			drawKey( ctx, key, 22, y + ( rh - kh ) / 2, kh, { minW: 130, fill: key === 'TRIGGER' || key === 'GRIP' ? C.paper : C.yellow } );
 			const label = key === 'GRIP' && shifter === 'hpattern' ? 'grab wheel / H-shifter' : what;
-			let size = Math.round( Math.min( rh * 0.6, 38 ) );
-			do ctx.font = `700 ${size}px Arial`; while ( ctx.measureText( label ).width > W - 190 && -- size > 14 );
-			ctx.fillText( label, 168, y + 1 );
+			ctx.fillStyle = '#fff';
+			ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+			fitText( ctx, label, 176, y + rh / 2 + 1, W - 200, Math.min( rh * 0.55, 32 ), 700 );
 
 		} );
 		this.tex.needsUpdate = true;

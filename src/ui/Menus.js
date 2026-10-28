@@ -407,7 +407,7 @@ export class Menus {
 	_staging() {
 
 		const el = h( `<div class="panel staging" aria-live="polite">
-			<div class="st-title">Summit staging</div>
+			<div class="st-title h-display">Summit staging</div>
 			<div class="st-msg">Rev it up. Press <kbd>Enter</kbd> / <kbd>Gas</kbd> to start the countdown.</div>
 			<button class="primary ready">Ready</button>
 		</div>` );
@@ -424,8 +424,8 @@ export class Menus {
 			<h2>Paused</h2>
 			<button class="primary resume">Resume</button>
 			<button class="restart">Restart run</button>
-			<button class="cam">Switch camera (C)</button>
-			<button class="recenter">Recenter VR view</button>
+			<button class="cam">Switch camera <kbd class="kb">C</kbd></button>
+			<button class="recenter" hidden>Recenter VR view</button>
 			<button class="settings-btn">Settings</button>
 			<button class="help-btn">Controls</button>
 			<button class="quit">Quit to garage</button>
@@ -634,7 +634,7 @@ export class Menus {
 				[ 'check', 'cameraShake', 'Camera shake' ]
 			],
 			hud: [
-				[ 'select', 'hudMode', 'HUD mode', [ [ 'auto', 'Arcade (compact in cockpit)' ], [ 'diegetic', 'Diegetic only in cockpit / VR' ], [ 'windshield', 'Project on windshield' ], [ 'slate', 'Floating slate (VR) / overlay' ], [ 'off', 'Off' ] ] ],
+				[ 'select', 'hudMode', 'HUD mode', [ [ 'auto', 'Arcade (compact in cockpit, glass HUD in VR)' ], [ 'diegetic', 'Diegetic only in cockpit / VR' ], [ 'windshield', 'Project on windshield' ], [ 'slate', 'Floating slate (VR) / overlay' ], [ 'off', 'Off' ] ] ],
 				[ 'check', 'captions', 'Closed captions [CC] for radio' ],
 				[ 'select', 'captionSize', 'Caption size', [ [ 'small', 'Small' ], [ 'medium', 'Medium' ], [ 'large', 'Large' ] ] ],
 				[ 'select', 'vignette', 'Comfort vignette', [ [ 'off', 'Off' ], [ 'auto', 'VR only' ], [ 'always', 'Always' ] ] ],

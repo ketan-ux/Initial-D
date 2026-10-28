@@ -1134,12 +1134,13 @@ export class Game {
 		let panel = 'none';
 		if ( inRace && fpp ) {
 
-			if ( mode === 'windshield' ) panel = 'windshield';
+			// VR has no DOM HUD: the arcade mode becomes the glass HUD over the wheel
+			if ( mode === 'windshield' || ( vr && mode === 'auto' ) ) panel = 'windshield';
 			else if ( mode === 'slate' && vr ) panel = 'slate';
 
 		}
 
-		this.telemetry.setMode( panel );
+		this.telemetry.setMode( panel, vr );
 
 	}
 

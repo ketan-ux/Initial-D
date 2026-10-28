@@ -30,7 +30,9 @@ certificate, then choose **WebXR / VR Mode** on the title screen.
 Useful URL parameters: `?preset=low|quest|high`, `?touch` (show touch
 controls), `?noadapt` (fixed resolution), `?autostart`, `?autopilot`,
 `?skipto=<metres>`, and `?q.<field>=<value>` to override a single quality
-field (for example `?q.mirrors=0&q.petals=500`).
+field (for example `?q.mirrors=0&q.petals=500`). For VR rendering
+experiments on the headset: `?xrlayers` (WebXR Layers projection layer) and
+`?xrmultiview` (projection layer + OVR_multiview2 single-pass stereo).
 
 ## Game loop
 
@@ -70,10 +72,19 @@ Menus work with the mouse, the keyboard (arrows and Enter), a gamepad
 (d-pad or stick, A to select, B to go back), touch, and VR laser pointers
 (trigger selects; A picks the top option).
 
+Every UI surface shares one look: heavy italic Kanit, slanted paper plates
+with ink outlines and hard shadows, an orange-to-yellow selected bar with a
+cyan focus ring, and comic-card panels. The DOM menus use it through CSS
+variables. The canvas-painted surfaces (VR menu, controller legends, glass
+HUD, VR captions) draw it with `src/ui/theme.js`. On landscape phones the
+dialogs fit the screen, and the pause menu switches to two columns. On big
+screens the menus and HUD scale up.
+
 In VR the menu panel opens in front of wherever you're looking. If you look
-away it drifts back into view. Each controller carries a floating legend of
-its buttons. The legends show in menus, through the countdown, for a few
-seconds after the start, and after you unpause. Anything you can grab glows
+away it drifts back into view. Look at a controller and a legend of its buttons pops up beside your hand
+(in menus, through the countdown, for a few seconds after the start, and
+after you unpause). Panels never hide behind the dashboard. Your hands
+always draw in front of them. Anything you can grab glows
 pink when your hand is close enough: the wheel rim, the shifter knob and the
 handbrake. During staging the wheel rim pulses until you take hold of it.
 
@@ -134,7 +145,7 @@ handbrake. During staging the wheel rim pulses until you take hold of it.
 | Lighting | Unlit toon ramp, light-pool decals | Toon lighting, headlight spot shadow | Toon lighting, cascaded moon shadows |
 | Post | — | — | Bloom, chromatic aberration, light shafts |
 | Mirrors | Static | 384 px, every 2nd frame | 768 px, every 2nd frame |
-| XR | — | Foveation, 72/90 Hz (multiview opt-in) | — |
+| XR | — | 0.8 eye-buffer scale, foveation, 72 Hz, VR profile + governor | — |
 
 On top of the presets the renderer uses culling, chunked LODs and merged
 geometry everywhere. A road chunk and a terrain chunk each take one draw call.
@@ -150,8 +161,19 @@ flatscreens.
   Layers projection-layer path (with `OVR_multiview2` single-pass stereo)
   drew the world upside down, left materials missing and the background
   uncleared. That path is now opt-in with `?xrmultiview`.
-- It requests `local-floor` and `session.updateTargetFrameRate(90)`, falling
-  back to 72.
+- It requests `local-floor`, a 72 Hz target and a 0.8 framebuffer scale.
+- Stereo doubles every draw, so VR always runs a lean profile:
+  - about 230 m of draw distance, ending in mountain mist and a painted
+    silhouette ring of ridges and treelines (`MistRing`)
+  - terrain switches to its coarse level sooner
+  - no headlight shadow pass, slower and shorter mirrors, fewer petals, no
+    ink outlines
+  - a governor steps down through four levels (to 125 m) when the headset
+    misses its frame rate, and back up when there's headroom
+  - in the emulator this takes a stereo frame from 194 to about 100 draw
+    calls and roughly halves the triangles
+- In VR the arcade HUD becomes a glass HUD floating over the hood: RPM,
+  speed, gear, position, time, gap and the start countdown.
 - Fixed foveated rendering is set with `renderer.xr.setFoveation`.
 
 ## Project layout

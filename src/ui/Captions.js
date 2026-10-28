@@ -2,6 +2,7 @@ import * as THREE from 'three/webgpu';
 import { bus } from '../core/events.js';
 import { settings } from '../core/settings.js';
 import { emissiveMaterial } from '../render/toon.js';
+import { C, font, drawCard, drawKey, inkText } from './theme.js';
 
 // Closed captions for radio comms. Shown exactly while the line plays,
 // placed in the lower band of the screen below the road sightline (flat) or
@@ -73,18 +74,23 @@ export class Captions {
 
 		const ctx = this.canvas.getContext( '2d' );
 		const W = 1024, H = 160;
-		ctx.clearRect( 0, 0, W, H );
-		ctx.fillStyle = 'rgba(8,6,16,0.82)';
-		ctx.beginPath(); ctx.roundRect( 0, 0, W, H, 28 ); ctx.fill();
-		ctx.font = '700 30px Arial';
-		ctx.fillStyle = c.color;
-		ctx.textBaseline = 'top';
-		ctx.fillText( `[CC] RADIO · ${c.speaker}`, 26, 14 );
+		// same look as the flatscreen captions: [CC] chip, ink-outlined RADIO
+		// tag, white subtitle text on a dark comic card
+		drawCard( ctx, W, H, { pad: 2, border: 4 } );
+		ctx.textBaseline = 'middle';
+		const kw = drawKey( ctx, 'CC', 22, 14, 30 );
+		ctx.textBaseline = 'alphabetic';
+		inkText( ctx, 'Radio', 22 + kw + 16, 40, 28, { color: c.color } );
+		const tw = ctx.measureText( 'RADIO' ).width; // inkText leaves its font set
+		ctx.font = font( 24, 600, false );
+		ctx.fillStyle = C.muted; ctx.textAlign = 'left';
+		ctx.fillText( c.speaker, 22 + kw + 16 + tw + 14, 40 );
 		ctx.fillStyle = '#ffffff';
-		ctx.font = '600 34px Arial';
+		ctx.font = font( 32, 600, false );
+		ctx.textBaseline = 'top';
 		// wrap text into two lines max
 		const words = `“${c.text}”`.split( ' ' );
-		let line = '', y = 56;
+		let line = '', y = 58;
 		for ( const w of words ) {
 
 			const test = line ? line + ' ' + w : w;
