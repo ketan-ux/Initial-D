@@ -1224,6 +1224,8 @@ export class Game {
 
 	_settingChanged( key ) {
 
+		if ( ( key === 'touchSteer' || key === '*' ) && this.touch ) this.touch.setMode( settings.touchSteer );
+
 		if ( key === 'hudMode' || key === '*' ) this._applyHud();
 		if ( key === 'camera' && this.state === 'race' ) {
 

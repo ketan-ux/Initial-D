@@ -11,6 +11,8 @@ const DEFAULTS = {
 	hudMode: 'auto', // auto | windshield | slate | off
 	units: 'kmh', // kmh | mph
 	transmission: 'auto', // auto | manual
+	touchSteer: 'gyro', // gyro | drag (phones/tablets)
+	gyroSensitivity: 1, // 0.5..2: tilt needed for full turn = 30° / sensitivity
 	steeringAssist: 0.5, // 0..1 countersteer help for keyboard/touch
 	vignette: 'auto', // off | auto (VR only) | always
 	vignetteStrength: 0.7,

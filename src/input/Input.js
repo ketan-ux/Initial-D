@@ -1,3 +1,4 @@
+import { settings } from '../core/settings.js';
 import { clamp } from '../core/math.js';
 import { Emitter } from '../core/events.js';
 
@@ -134,7 +135,7 @@ export class Input extends Emitter {
 			this.device = 'touch';
 			s.throttle = this.touch.throttle; s.brake = this.touch.brake; s.handbrake = this.touch.handbrake;
 			s.steer = this.touch.steer;
-			s.steerIsAbsolute = this.touch.tilt;
+			s.steerIsAbsolute = false; // pad and gyro both use the grip-limited lock
 
 		}
 
@@ -191,7 +192,6 @@ export class TouchControls {
 				<button class="tc-mini" data-act="shiftDown" aria-label="Shift down">−</button>
 				<button class="tc-mini" data-act="shiftUp" aria-label="Shift up">+</button>
 				<button class="tc-mini" data-act="camera" aria-label="Switch camera">CAM</button>
-				<button class="tc-mini" data-act="tilt" aria-label="Toggle gyro steering">GYRO</button>
 				<button class="tc-mini" data-act="pause" aria-label="Pause">II</button>
 				<button class="tc-mini tc-fs" data-act="fullscreen" aria-label="Toggle fullscreen">⛶</button>
 			</div>`;
@@ -227,8 +227,7 @@ export class TouchControls {
 
 			e.preventDefault();
 			const act = b.dataset.act;
-			if ( act === 'tilt' ) this.toggleTilt( b );
-			else input.emit( act );
+			input.emit( act );
 
 		} ) );
 
@@ -263,68 +262,78 @@ export class TouchControls {
 
 		pad.addEventListener( 'pointerup', end );
 		pad.addEventListener( 'pointercancel', end );
-		// Gyro steering: tilt the phone like a wheel. The roll angle comes from
-		// beta in landscape (sign flips between the two landscape directions) and
-		// gamma in portrait. It's zeroed at whatever angle you hold the phone when
-		// you switch it on, with a small deadzone, ±28° to full lock, a gentle
-		// response curve and smoothing against sensor jitter.
-		this._tiltAngle = () => {
-
-			const o = screen.orientation?.angle ?? window.orientation ?? 0;
-			return ( a ) => ( Math.abs( o ) === 90 || o === 270 ? a.beta * ( o === 90 ? 1 : - 1 ) : a.gamma );
-
-		};
+		// Gyro steering: tilt the phone like a wheel. Roll comes from beta in
+		// landscape (sign flips between the two landscape directions) and gamma
+		// in portrait, zeroed at the angle the phone is held when the race view
+		// opens. 2° deadzone, full turn at 30° / sensitivity, gentle curve,
+		// smoothing, capped at 80%. The car treats it like the drag pad: full
+		// tilt asks for the tightest turn the tyres can hold at this speed
+		// (grip-limited lock), never a snap to opposite lock.
+		this.gyroOK = typeof DeviceOrientationEvent !== 'undefined';
 		this._onTilt = ( e ) => {
 
 			if ( ! t.tilt || e.gamma == null || e.beta == null ) return;
-			const ang = this._tiltAngle()( e );
+			const o = screen.orientation?.angle ?? window.orientation ?? 0;
+			const ang = Math.abs( o ) === 90 || o === 270 ? e.beta * ( o === 90 ? 1 : - 1 ) : e.gamma;
 			if ( this.tiltZero == null ) this.tiltZero = ang;
 			let d = ang - this.tiltZero;
-			d = Math.sign( d ) * Math.max( 0, Math.abs( d ) - 2 ); // deadzone
-			const x = clamp( - d / 28, - 1, 1 );
-			const target = Math.sign( x ) * Math.pow( Math.abs( x ), 1.3 );
+			if ( Math.abs( d ) > 75 ) return; // phone flipped over: ignore, don't wrap to opposite lock
+			d = Math.sign( d ) * Math.max( 0, Math.abs( d ) - 2 );
+			const x = clamp( - d * ( settings.gyroSensitivity ?? 1 ) / 30, - 1, 1 );
+			const target = Math.sign( x ) * Math.pow( Math.abs( x ), 1.3 ) * 0.8;
 			t.steer += ( target - t.steer ) * 0.45;
+			t.active = true;
 
 		};
-		// hide the toggle on devices without an orientation sensor API
-		if ( typeof DeviceOrientationEvent === 'undefined' ) this.el.querySelector( '[data-act="tilt"]' )?.remove();
+		// iOS only grants motion access from a tap: ask on the first touch
+		el.addEventListener( 'pointerdown', () => this._askMotion(), { capture: true } );
+		this.setMode( settings.touchSteer );
 
 	}
 
-	async toggleTilt( btn ) {
+	async _askMotion() {
 
-		const t = this.input.touch;
-		if ( ! t.tilt && typeof DeviceOrientationEvent !== 'undefined' && DeviceOrientationEvent.requestPermission ) {
+		if ( this._motionAsked || ! this.input.touch.tilt ) return;
+		this._motionAsked = true;
+		const D = typeof DeviceOrientationEvent !== 'undefined' ? DeviceOrientationEvent : null;
+		if ( D?.requestPermission ) {
 
 			try {
 
-				if ( await DeviceOrientationEvent.requestPermission() !== 'granted' ) return;
+				if ( await D.requestPermission() !== 'granted' ) this.input.emit( 'toast', 'Motion access denied — using drag steering' );
 
-			} catch ( e ) {
-
-				return;
-
-			}
+			} catch ( e ) { /* not from a gesture */ this._motionAsked = false; }
 
 		}
 
-		t.tilt = ! t.tilt;
-		this.tiltZero = null; // recentre on the current hold
-		btn.classList.toggle( 'down', t.tilt );
-		this.input.emit?.( 'toast', t.tilt ? 'Gyro steering on — hold level to centre' : 'Gyro steering off' );
-		if ( t.tilt ) window.addEventListener( 'deviceorientation', this._onTilt );
-		else {
+	}
 
-			window.removeEventListener( 'deviceorientation', this._onTilt );
-			t.steer = 0;
+	// 'gyro': brake + handbrake on the left, gas on the right, tilt steers.
+	// 'drag': steering pad on the left, all pedals on the right.
+	setMode( mode ) {
 
-		}
+		const t = this.input.touch;
+		const gyro = mode !== 'drag' && this.gyroOK;
+		t.tilt = gyro;
+		t.steer = 0;
+		this.tiltZero = null;
+		this.el.classList.toggle( 'gyro', gyro );
+		document.body.classList.toggle( 'touch-gyro', gyro );
+		window.removeEventListener( 'deviceorientation', this._onTilt );
+		if ( gyro ) window.addEventListener( 'deviceorientation', this._onTilt );
+
+	}
+
+	recenter() {
+
+		this.tiltZero = null;
 
 	}
 
 	show( v ) {
 
 		this.el.style.display = v ? '' : 'none';
+		if ( v ) this.recenter(); // centre the gyro on how the phone is held now
 		// the touch bar carries its own fullscreen button while driving
 		document.body.classList.toggle( 'touch-race', v );
 

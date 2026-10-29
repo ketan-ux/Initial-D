@@ -588,7 +588,7 @@ export class Menus {
 					<tr><td>Tap the phone</td><td>Cycle GPS view</td></tr><tr><td>Y</td><td>Pause · L-stick click: recenter</td></tr>
 				</table></section>
 				<section><h3>Touch</h3><table>
-					<tr><td>Left pad</td><td>Drag to steer, or tap GYRO and tilt the phone like a wheel</td></tr><tr><td>GAS / BRAKE</td><td>Pedals</td></tr>
+					<tr><td>Steer</td><td>Tilt the phone like a wheel (gyro), or the drag pad — Settings › Driving</td></tr><tr><td>GAS / BRAKE</td><td>Pedals</td></tr>
 					<tr><td>HB</td><td>Handbrake</td></tr><tr><td>+ / −</td><td>Shift</td></tr>
 				</table></section>
 			</div>
@@ -627,6 +627,8 @@ export class Menus {
 			],
 			drive: [
 				[ 'select', 'transmission', 'Transmission', [ [ 'auto', 'Automatic' ], [ 'manual', 'Manual (E/Q, paddles)' ] ] ],
+				[ 'select', 'touchSteer', 'Touch steering', [ [ 'gyro', 'Gyro: tilt the phone' ], [ 'drag', 'Drag pad' ] ] ],
+				[ 'range', 'gyroSensitivity', 'Gyro sensitivity', [ 0.5, 2, 0.05 ] ],
 				[ 'range', 'steeringAssist', 'Countersteer assist', [ 0, 1, 0.05 ] ],
 				[ 'range', 'rivalDifficulty', 'Rival skill', [ 0.3, 1, 0.05 ] ],
 				[ 'select', 'camera', 'Default camera', [ [ 'cockpit', 'First-person cockpit' ], [ 'chase', 'Third-person chase' ] ] ],
