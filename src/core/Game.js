@@ -335,6 +335,7 @@ export class Game {
 
 		} );
 		i.on( 'camera', () => this.toggleCamera() );
+		i.on( 'toast', ( msg ) => this.hud.toast( msg ) );
 		i.on( 'fullscreen', () => this.menus.toggleFullscreen?.() );
 		i.on( 'headlights', () => {
 

@@ -57,7 +57,7 @@ experiments on the headset: `?xrlayers` (WebXR Layers projection layer) and
 
 | | Keyboard | Gamepad | Quest Touch Plus | Touch |
 |---|---|---|---|---|
-| Steer | A/D, ←/→ | Left stick | Grab the wheel rim (one or two hands, hand-over-hand), or either thumbstick with hands off the wheel | Left pad / tilt |
+| Steer | A/D, ←/→ | Left stick | Grab the wheel rim (one or two hands, hand-over-hand), or either thumbstick with hands off the wheel | Left pad, or GYRO: tilt the phone like a wheel |
 | Throttle / brake | W/S, ↑/↓ | RT / LT | Right / left trigger | GAS / BRAKE |
 | Handbrake | Space | A | Pull the lever up (or hold B) | HB |
 | Shift | E / Q | RB / LB | Grab the shifter (sequential or H-pattern), slap, or A/X | + / − |

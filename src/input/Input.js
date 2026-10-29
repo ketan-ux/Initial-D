@@ -191,7 +191,7 @@ export class TouchControls {
 				<button class="tc-mini" data-act="shiftDown" aria-label="Shift down">−</button>
 				<button class="tc-mini" data-act="shiftUp" aria-label="Shift up">+</button>
 				<button class="tc-mini" data-act="camera" aria-label="Switch camera">CAM</button>
-				<button class="tc-mini" data-act="tilt" aria-label="Toggle tilt steering">TILT</button>
+				<button class="tc-mini" data-act="tilt" aria-label="Toggle gyro steering">GYRO</button>
 				<button class="tc-mini" data-act="pause" aria-label="Pause">II</button>
 				<button class="tc-mini tc-fs" data-act="fullscreen" aria-label="Toggle fullscreen">⛶</button>
 			</div>`;
@@ -263,14 +263,31 @@ export class TouchControls {
 
 		pad.addEventListener( 'pointerup', end );
 		pad.addEventListener( 'pointercancel', end );
-		this._onTilt = ( e ) => {
+		// Gyro steering: tilt the phone like a wheel. The roll angle comes from
+		// beta in landscape (sign flips between the two landscape directions) and
+		// gamma in portrait. It's zeroed at whatever angle you hold the phone when
+		// you switch it on, with a small deadzone, ±28° to full lock, a gentle
+		// response curve and smoothing against sensor jitter.
+		this._tiltAngle = () => {
 
-			if ( ! t.tilt || e.gamma == null ) return;
-			const landscape = Math.abs( window.orientation || screen.orientation?.angle || 0 ) === 90;
-			const ang = landscape ? e.beta * Math.sign( screen.orientation?.angle || window.orientation || 90 ) : e.gamma;
-			t.steer = clamp( - ang / 30, - 1, 1 );
+			const o = screen.orientation?.angle ?? window.orientation ?? 0;
+			return ( a ) => ( Math.abs( o ) === 90 || o === 270 ? a.beta * ( o === 90 ? 1 : - 1 ) : a.gamma );
 
 		};
+		this._onTilt = ( e ) => {
+
+			if ( ! t.tilt || e.gamma == null || e.beta == null ) return;
+			const ang = this._tiltAngle()( e );
+			if ( this.tiltZero == null ) this.tiltZero = ang;
+			let d = ang - this.tiltZero;
+			d = Math.sign( d ) * Math.max( 0, Math.abs( d ) - 2 ); // deadzone
+			const x = clamp( - d / 28, - 1, 1 );
+			const target = Math.sign( x ) * Math.pow( Math.abs( x ), 1.3 );
+			t.steer += ( target - t.steer ) * 0.45;
+
+		};
+		// hide the toggle on devices without an orientation sensor API
+		if ( typeof DeviceOrientationEvent === 'undefined' ) this.el.querySelector( '[data-act="tilt"]' )?.remove();
 
 	}
 
@@ -292,7 +309,9 @@ export class TouchControls {
 		}
 
 		t.tilt = ! t.tilt;
+		this.tiltZero = null; // recentre on the current hold
 		btn.classList.toggle( 'down', t.tilt );
+		this.input.emit?.( 'toast', t.tilt ? 'Gyro steering on — hold level to centre' : 'Gyro steering off' );
 		if ( t.tilt ) window.addEventListener( 'deviceorientation', this._onTilt );
 		else {
 
